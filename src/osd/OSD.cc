@@ -5038,7 +5038,7 @@ void OSD::maybe_update_heartbeat_peers()
 {
   assert(osd_lock.is_locked());
 
-  if (is_waiting_for_healthy()) {
+  if (is_waiting_for_healthy() || is_active()) {
     utime_t now = ceph_clock_now();
     if (last_heartbeat_resample == utime_t()) {
       last_heartbeat_resample = now;
