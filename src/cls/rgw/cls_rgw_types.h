@@ -307,7 +307,7 @@ void decode_packed_val(T& val, bufferlist::const_iterator& bl)
       }
       break;
     default:
-      throw buffer::error();
+      throw buffer::malformed_input();
   }
 }
 
