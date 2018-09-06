@@ -5685,6 +5685,16 @@ void OSD::tick()
 
   if (is_waiting_for_healthy()) {
     start_boot();
+    if (is_waiting_for_healthy()) {
+      // failed to boot
+      Mutex::Locker l(heartbeat_lock);
+      utime_t now = ceph_clock_now();
+      if (now - last_mon_heartbeat > cct->_conf->osd_mon_heartbeat_interval) {
+        last_mon_heartbeat = now;
+        dout(1) << __func__ << " checking mon for new map" << dendl;
+        osdmap_subscribe(osdmap->get_epoch() + 1, false);
+      }
+    }
   } else if (is_preboot() &&
 	     waiting_for_luminous_mons &&
 	     monc->monmap.get_required_features().contains_all(
