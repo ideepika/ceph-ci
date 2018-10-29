@@ -1091,6 +1091,10 @@ bool DaemonServer::handle_command(MCommand *m)
 	    }
 	  });
       });
+    if (r && prefix == "osd safe-to-destroy") {
+      cmdctx->reply(r, ss); // regardless of formatter
+      return true;
+    }
     if (!r && (!active_osds.empty() ||
                !missing_stats.empty() || !stored_pgs.empty())) {
        if (!safe_to_destroy.empty()) {
@@ -1116,13 +1120,36 @@ bool DaemonServer::handle_command(MCommand *m)
          r = -EAGAIN;
        }
     }
-    if (r) {
-      cmdctx->reply(r, ss);
-      return true;
+    if (!r) {
+      ss << "OSD(s) " << osds << " are safe to destroy without reducing data"
+         << " durability.";
+      safe_to_destroy.swap(osds);
     }
-    ss << "OSD(s) " << osds << " are safe to destroy without reducing data"
-       << " durability.";
-    cmdctx->reply(0, ss);
+    if (f) {
+      f->open_object_section("osd_status");
+      f->open_array_section("safe_to_destroy");
+      for (auto i : safe_to_destroy)
+        f->dump_int("osd", i);
+      f->close_section();
+      f->open_array_section("active");
+      for (auto i : active_osds)
+        f->dump_int("osd", i);
+      f->close_section();
+      f->open_array_section("missing_stats");
+      for (auto i : missing_stats)
+        f->dump_int("osd", i);
+      f->close_section();
+      f->open_array_section("stored_pgs");
+      for (auto i : stored_pgs)
+        f->dump_int("osd", i);
+      f->close_section();
+      f->close_section(); // osd_status
+      f->flush(cmdctx->odata);
+      r = 0;
+      ss.clear();
+      ss.str("");
+    }
+    cmdctx->reply(r, ss);
     return true;
   } else if (prefix == "osd ok-to-stop") {
     vector<string> ids;
