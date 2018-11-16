@@ -2155,6 +2155,7 @@ protected:
   void requeue_failures();
   void send_failures();
   void send_still_alive(epoch_t epoch, const entity_inst_t &i);
+  void cancel_pending_failures();
 
   // -- pg stats --
   Mutex pg_stat_queue_lock;

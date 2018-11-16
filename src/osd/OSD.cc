@@ -6692,6 +6692,18 @@ void OSD::send_still_alive(epoch_t epoch, const entity_inst_t &i)
   monc->send_mon_message(m);
 }
 
+void OSD::cancel_pending_failures()
+{
+  Mutex::Locker l(heartbeat_lock);
+  auto it = failure_pending.begin();
+  while (it != failure_pending.end()) {
+    dout(10) << __func__ << " canceling in-flight failure report for osd."
+             << it->first << dendl;
+    send_still_alive(osdmap->get_epoch(), it->second.second);
+    failure_pending.erase(it++);
+  }
+}
+
 void OSD::send_pg_stats(const utime_t &now)
 {
   assert(map_lock.is_locked());
@@ -8552,6 +8564,7 @@ void OSD::_committed_osd_maps(epoch_t first, epoch_t last, MOSDMap *m)
       // set incarnation so that osd_reqid_t's we generate for our
       // objecter requests are unique across restarts.
       service.objecter->set_client_incarnation(osdmap->get_epoch());
+      cancel_pending_failures();
     }
   }
 
@@ -8698,15 +8711,7 @@ void OSD::_committed_osd_maps(epoch_t first, epoch_t last, MOSDMap *m)
 
   if (do_shutdown) {
     if (network_error) {
-      Mutex::Locker l(heartbeat_lock);
-      map<int,pair<utime_t,entity_inst_t>>::iterator it =
-	failure_pending.begin();
-      while (it != failure_pending.end()) {
-        dout(10) << "handle_osd_ping canceling in-flight failure report for osd."
-		 << it->first << dendl;
-        send_still_alive(osdmap->get_epoch(), it->second.second);
-        failure_pending.erase(it++);
-      }
+      cancel_pending_failures();
     }
     // trigger shutdown in a different thread
     dout(0) << __func__ << " shutdown OSD via async signal" << dendl;
