@@ -35,6 +35,7 @@
 #include "MDSContext.h"
 #include "PurgeQueue.h"
 #include "Server.h"
+#include "MetricsHandler.h"
 #include "osdc/Journaler.h"
 
 // Full .h import instead of forward declaration for PerfCounter, for the
@@ -529,6 +530,7 @@ class MDSRank {
     // because its init/shutdown happens at the top level.
     PurgeQueue purge_queue;
 
+    MetricsHandler metrics_handler;
     std::unique_ptr<MetricAggregator> metric_aggregator;
 
     list<cref_t<Message>> waiting_for_nolaggy;

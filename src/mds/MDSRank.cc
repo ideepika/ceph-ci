@@ -20,6 +20,7 @@
 #include "messages/MClientRequestForward.h"
 #include "messages/MMDSLoadTargets.h"
 #include "messages/MMDSTableRequest.h"
+#include "messages/MMDSMetrics.h"
 
 #include "mgr/MgrClient.h"
 
@@ -501,6 +502,7 @@ MDSRank::MDSRank(
 	}
       )
     ),
+    metrics_handler(cct, this),
     beacon(beacon_),
     messenger(msgr), monc(monc_), mgrc(mgrc),
     respawn_hook(respawn_hook_),
@@ -525,7 +527,7 @@ MDSRank::MDSRank(
   snapserver = new SnapServer(this, monc);
   snapclient = new SnapClient(this);
 
-  server = new Server(this);
+  server = new Server(this, &metrics_handler);
   locker = new Locker(this, mdcache);
 
   op_tracker.set_complaint_and_threshold(cct->_conf->mds_op_complaint_time,
@@ -818,6 +820,10 @@ void MDSRankDispatcher::shutdown()
   mdcache->shutdown();
 
   purge_queue.shutdown();
+
+  // shutdown metrics handler/updater -- this is ok even if it was not
+  // inited.
+  metrics_handler.shutdown();
 
   // shutdown metric aggergator
   if (metric_aggregator != nullptr) {
@@ -1971,6 +1977,10 @@ void MDSRank::active_start()
       last_state == MDSMap::STATE_STARTING) {
     mdcache->open_root();
   }
+
+  dout(10) << __func__ << ": initializing metrics handler" << dendl;
+  metrics_handler.init();
+  messenger->add_dispatcher_tail(&metrics_handler);
 
   // metric aggregation is solely done by rank 0
   if (is_rank0()) {
