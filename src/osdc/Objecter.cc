@@ -400,6 +400,7 @@ void Objecter::start(const OSDMap* o)
   start_tick();
   if (o) {
     osdmap->deepish_copy_from(*o);
+    prune_pg_mapping(osdmap->get_pools());
   } else if (osdmap->get_epoch() == 0) {
     _maybe_request_map();
   }
@@ -1220,6 +1221,7 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	}
 	logger->set(l_osdc_map_epoch, osdmap->get_epoch());
 
+        prune_pg_mapping(osdmap->get_pools());
 	cluster_full = cluster_full || _osdmap_full_flag();
 	update_pool_full_map(pool_full_map);
 
@@ -1257,6 +1259,7 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	ldout(cct, 3) << "handle_osd_map decoding full epoch "
 		      << m->get_last() << dendl;
 	osdmap->decode(m->maps[m->get_last()]);
+        prune_pg_mapping(osdmap->get_pools());
 
 	_scan_requests(homeless_session, false, false, NULL,
 		       need_resend, need_resend_linger,
@@ -2843,10 +2846,25 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   int size = pi->size;
   int min_size = pi->min_size;
   unsigned pg_num = pi->get_pg_num();
+  unsigned pg_num_mask = pi->get_pg_num_mask();
   int up_primary, acting_primary;
   vector<int> up, acting;
-  osdmap->pg_to_up_acting_osds(pgid, &up, &up_primary,
-			       &acting, &acting_primary);
+  ps_t actual_ps = ceph_stable_mod(pgid.ps(), pg_num, pg_num_mask);
+  pg_t actual_pgid(actual_ps, pgid.pool());
+  pg_mapping_t pg_mapping;
+  pg_mapping.epoch = osdmap->get_epoch();
+  if (lookup_pg_mapping(actual_pgid, &pg_mapping)) {
+    up = pg_mapping.up;
+    up_primary = pg_mapping.up_primary;
+    acting = pg_mapping.acting;
+    acting_primary = pg_mapping.acting_primary;
+  } else {
+    osdmap->pg_to_up_acting_osds(actual_pgid, &up, &up_primary,
+                                 &acting, &acting_primary);
+    pg_mapping_t pg_mapping(osdmap->get_epoch(),
+                            up, up_primary, acting, acting_primary);
+    update_pg_mapping(actual_pgid, std::move(pg_mapping));
+  }
   bool sort_bitwise = osdmap->test_flag(CEPH_OSDMAP_SORTBITWISE);
   bool recovery_deletes = osdmap->test_flag(CEPH_OSDMAP_RECOVERY_DELETES);
   unsigned prev_seed = ceph_stable_mod(pgid.ps(), t->pg_num, t->pg_num_mask);
