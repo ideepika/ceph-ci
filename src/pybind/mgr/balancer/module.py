@@ -17,7 +17,7 @@ import datetime
 
 # available modes: 'none', 'crush', 'crush-compat', 'upmap', 'osd_weight'
 default_mode = 'upmap'
-default_sleep_interval = 60   # seconds
+default_sleep_interval = 5     # seconds
 default_max_misplaced = .05    # max ratio of pgs replaced at a time
 
 TIME_FORMAT = '%Y-%m-%d_%H:%M:%S'
