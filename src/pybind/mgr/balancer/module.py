@@ -16,7 +16,7 @@ from mgr_module import CRUSHMap
 import datetime
 
 # available modes: 'none', 'crush', 'crush-compat', 'upmap', 'osd_weight'
-default_mode = 'none'
+default_mode = 'upmap'
 default_sleep_interval = 60   # seconds
 default_max_misplaced = .05    # max ratio of pgs replaced at a time
 
@@ -450,9 +450,59 @@ class Module(MgrModule):
 
         return True
 
+    def enable_required_upmap_features(self):
+        result = CommandResult('')
+        self.send_command(result, 'mon', '', json.dumps({
+            'prefix': 'osd set-require-min-compat-client',
+            'format': 'json',
+            'version': 'luminous'
+        }), '')
+        r, outb, outs = result.wait()
+        self.log.info('ceph osd set-require-min-compat-client luminous:'
+                      'r = %d, detail =%s' % (r, outs))
+
+    def get_pool_name(self, osdmap, pool):
+        for pg_pool in osdmap.dump().get('pools',[]):
+            if pg_pool['pool'] == pool:
+                 return pg_pool['pool_name']
+        return None
+
+    def auto_balance_empty_pools(self):
+        osdmap = self.get_osdmap()
+        pool_stats = self.get('pg_dump').get('pool_stats', [])
+
+        # check empty pools
+        # note that we add enough headroom here to catch any virtually/nearly
+        # empty pools too since these checks are fundamentally racy given that
+        # the actual pool stats get updated more frequently than we wake up
+        # and attempt optimization.
+        empty_pools = []
+        for pool_stat in pool_stats:
+            if pool_stat['stat_sum']['num_objects'] <= pool_stat['num_pg'] or \
+               pool_stat['stat_sum']['num_bytes'] <= (1 << 30): # 1 GiB
+                # FIXME: make plan accept ids directly instead
+                pool_name = self.get_pool_name(osdmap, pool_stat['poolid'])
+                assert pool_name is not None
+                empty_pools.append(pool_name)
+
+        if len(empty_pools) == 0:
+             return
+
+        # bit hacky, might include uuid to ensure uniqueness someday..
+        plan_name = 'for_empty_pools'
+        plan = self.plan_create(plan_name, osdmap, empty_pools)
+        r = self.optimize(plan)
+        if r[0] >= 0:
+            r = self.execute(plan)
+        if r[0] == -errno.EPERM and plan.mode == 'upmap':
+            # may or may not work, we don't really care
+            self.enable_required_upmap_features()
+        self.plan_rm(plan_name)
+
     def serve(self):
         self.log.info('Starting')
         while self.run:
+            self.auto_balance_empty_pools()
             self.active = self.get_config('active', '') is not ''
             sleep_interval = float(self.get_config('sleep_interval',
                                                    default_sleep_interval))
