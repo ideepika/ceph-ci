@@ -61,6 +61,9 @@ BlueFS::BlueFS(CephContext* cct)
     f->dump_string("pending delete size WAL", to_string(pending_release[0].size()));
     f->dump_string("pending delete size DB", to_string(pending_release[1].size()));
     f->dump_string("pending delete size SLOW", to_string(pending_release[2].size()));
+    f->dump_string("max pending delete size WAL", to_string(pending_release_max[0]));
+    f->dump_string("max pending delete size DB", to_string(pending_release_max[1]));
+    f->dump_string("max pending delete size SLOW", to_string(pending_release_max[2]));
 
     return true;
   };
@@ -425,6 +428,7 @@ void BlueFS::_init_alloc()
   dout(20) << __func__ << dendl;
   alloc.resize(MAX_BDEV);
   pending_release.resize(MAX_BDEV);
+  pending_release_max.resize(MAX_BDEV);
   for (unsigned id = 0; id < bdev.size(); ++id) {
     if (!bdev[id]) {
       continue;
@@ -1445,7 +1449,10 @@ int BlueFS::_flush_and_sync_log(std::unique_lock<std::mutex>& l,
 
   vector<interval_set<uint64_t>> to_release(pending_release.size());
   to_release.swap(pending_release);
-
+  for (size_t i = 0; i<pending_release.size(); i++) {
+    size_t s = pending_release[i].size();
+    if (s > pending_release_max[i]) pending_release_max[i] = s;
+  }
   uint64_t seq = log_t.seq = ++log_seq;
   assert(want_seq == 0 || want_seq <= seq);
   log_t.uuid = super.uuid;

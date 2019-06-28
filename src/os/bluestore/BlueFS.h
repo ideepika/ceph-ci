@@ -255,7 +255,8 @@ private:
   vector<uint64_t> block_total;               ///< sum of block_all
   vector<Allocator*> alloc;                   ///< allocators for bdevs
   vector<interval_set<uint64_t>> pending_release; ///< extents to release
-
+  vector<size_t> pending_release_max;
+  
   void _init_logger();
   void _shutdown_logger();
   void _update_logger_stats();
