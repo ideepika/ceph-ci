@@ -1606,11 +1606,11 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("objecter_tick_interval", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(5.0)
+    .set_default(1.0)
     .set_description(""),
 
     Option("objecter_timeout", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(10.0)
+    .set_default(1)
     .set_description(""),
 
     Option("objecter_inflight_op_bytes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
@@ -1942,15 +1942,15 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("osd_map_max_advance", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(40)
+    .set_default(100)
     .set_description(""),
 
     Option("osd_map_cache_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(50)
+    .set_default(128)
     .set_description(""),
 
     Option("osd_map_message_max", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(40)
+    .set_default(100)
     .set_description("maximum number of OSDMaps to include in a single message"),
 
     Option("osd_map_message_max_bytes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
@@ -1958,7 +1958,7 @@ std::vector<Option> get_global_options() {
     .set_description("maximum number of bytes worth of OSDMaps to include in a single message"),
 
     Option("osd_map_share_max_epochs", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(40)
+    .set_default(100)
     .set_description(""),
 
     Option("osd_inject_bad_map_crc_probability", Option::TYPE_FLOAT, Option::LEVEL_DEV)
