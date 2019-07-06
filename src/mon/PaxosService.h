@@ -54,6 +54,7 @@ class PaxosService {
   bool proposing;
 
   bool need_immediate_propose = false;
+  bool need_min_delay_propose = false;
 
 protected:
   /**
@@ -372,6 +373,14 @@ public:
    */
   void force_immediate_propose() {
     need_immediate_propose = true;
+  }
+
+  /**
+   * use paxos_min_wait instead of paxos_propose_interval
+   * to gather updates before proposing a map update
+   */
+  void force_min_delay_propose() {
+    need_min_delay_propose = true;
   }
 
   /**

@@ -1460,7 +1460,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("paxos_min_wait", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(0.05)
+    .set_default(0.2)
     .set_description(""),
 
     Option("paxos_min", Option::TYPE_INT, Option::LEVEL_ADVANCED)

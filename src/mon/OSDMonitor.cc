@@ -2907,6 +2907,7 @@ bool OSDMonitor::prepare_alive(MonOpRequestRef op)
 	  << " from " << m->get_orig_source_inst() << dendl;
 
   update_up_thru(from, m->version); // set to the latest map the OSD has
+  force_min_delay_propose();
   wait_for_finished_proposal(op, new C_ReplyMap(this, op, m->version));
   return true;
 }
@@ -3096,7 +3097,7 @@ bool OSDMonitor::prepare_pgtemp(MonOpRequestRef op)
 
   // set up_thru too, so the osd doesn't have to ask again
   update_up_thru(from, m->map_epoch);
-
+  force_min_delay_propose();
   wait_for_finished_proposal(op, new C_ReplyMap(this, op, m->map_epoch));
   return true;
 }

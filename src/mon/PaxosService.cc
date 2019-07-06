@@ -178,6 +178,10 @@ bool PaxosService::should_propose(double& delay)
       delay = (double)(g_conf->paxos_propose_interval + paxos->last_commit_time
 		       - now);
   }
+  if (need_min_delay_propose && delay > (double)g_conf->paxos_min_wait) {
+    delay = (double)g_conf->paxos_min_wait;
+    need_min_delay_propose = false;
+  }
   return true;
 }
 
