@@ -5740,10 +5740,18 @@ void OSD::tick_without_osd_lock()
   if (is_active() || is_waiting_for_healthy()) {
     heartbeat_lock.Lock();
     heartbeat_check();
+    auto has_failure = !failure_queue.empty();
+    auto has_pending_failure = !failure_pending.empty();
     heartbeat_lock.Unlock();
+    if (has_failure || has_pending_failure) {
+      osdmap_subscribe(osdmap->get_epoch() + 1, false);
+    }
 
     map_lock.get_read();
     Mutex::Locker l(mon_report_lock);
+    if (has_failure) {
+      send_failures();
+    }
 
     // mon report?
     bool reset = false;
@@ -5796,7 +5804,6 @@ void OSD::tick_without_osd_lock()
 
       // do any pending reports
       send_full_update();
-      send_failures();
       if (osdmap->require_osd_release < CEPH_RELEASE_LUMINOUS) {
 	send_pg_stats(now);
       }
