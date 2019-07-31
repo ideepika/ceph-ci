@@ -3650,7 +3650,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("bluestore_max_blob_size_ssd", Option::TYPE_UINT, Option::LEVEL_DEV)
-    .set_default(64_K)
+    .set_default(512_K)
     .set_safe()
     .set_description(""),
 
