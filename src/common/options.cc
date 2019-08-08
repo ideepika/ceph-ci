@@ -3325,7 +3325,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("bdev_aio_poll_ms", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(250)
+    .set_default(5)
     .set_description(""),
 
     Option("bdev_aio_max_queue_depth", Option::TYPE_INT, Option::LEVEL_ADVANCED)
