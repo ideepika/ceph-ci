@@ -31,9 +31,6 @@
 #include <boost/uuid/uuid.hpp>
 
 
-// HATE. LET ME TELL YOU HOW MUCH I'VE COME TO HATE BOOST.SYSTEM SINCE
-// I BEGAN TO LIVE.
-
 #include <boost/system/error_code.hpp>
 
 #include "include/function2.hpp"
@@ -55,21 +52,19 @@
 
 #include "common/ceph_time.h"
 
-// Figure out exactly what pool stat info we want to expose to clients
-// and get rid of this.
-
-#include "osd/osd_types.h"
-
 #include "librados/ListObjectImpl.h"
 
 class CephContext;
 
 namespace RADOS {
 class Object;
+class IOContext;
 }
 namespace std {
 template<>
 struct hash<RADOS::Object>;
+template<>
+struct hash<RADOS::IOContext>;
 }
 
 namespace RADOS {
@@ -87,6 +82,7 @@ class Object final {
   friend std::hash<Object>;
 
 public:
+  Object();
   Object(std::string_view s);
   Object(std::string&& s);
   Object(const std::string& s);
@@ -120,8 +116,11 @@ private:
 // operations in the same pool or namespace, it doesn't make sense to
 // redo a bunch of lookups and string copies.
 
-struct IOContext final {
+class IOContext final {
   friend RADOS;
+  friend std::hash<IOContext>;
+
+public:
 
   IOContext();
   explicit IOContext(std::int64_t pool);
@@ -142,9 +141,6 @@ struct IOContext final {
   void ns(std::string_view _ns);
   void ns(std::string&& _ns);
 
-  // Because /some fool/ decided to disallow optional references,
-  // you'd have to construct a string in an optional which I would then
-  // take an optional reference to. Thus a separate 'clear' method.
   std::optional<std::string_view> key() const;
   void key(std::string_view _key);
   void key(std::string&& _key);
@@ -165,6 +161,16 @@ struct IOContext final {
   void write_snap_context(std::optional<
 			  std::pair<std::uint64_t,
 			              std::vector<std::uint64_t>>> snapc);
+
+  friend std::ostream& operator <<(std::ostream& m, const IOContext& o);
+  friend bool operator <(const IOContext& lhs, const IOContext& rhs);
+  friend bool operator <=(const IOContext& lhs, const IOContext& rhs);
+  friend bool operator >=(const IOContext& lhs, const IOContext& rhs);
+  friend bool operator >(const IOContext& lhs, const IOContext& rhs);
+
+  friend bool operator ==(const IOContext& lhs, const IOContext& rhs);
+  friend bool operator !=(const IOContext& lhs, const IOContext& rhs);
+
 private:
 
   static constexpr std::size_t impl_size = 16 * 8;
@@ -344,6 +350,50 @@ public:
 	    const ceph::buffer::list& inbl, boost::system::error_code* ec = nullptr);
 };
 
+// From librados.h, maybe move into a common file. But I want to see
+// if we need/want to amend/add/remove anything first.
+struct PoolStats {
+  /// space used in bytes
+  uint64_t num_bytes;
+  /// space used in KB
+  uint64_t num_kb;
+  /// number of objects in the pool
+  uint64_t num_objects;
+  /// number of clones of objects
+  uint64_t num_object_clones;
+  /// num_objects * num_replicas
+  uint64_t num_object_copies;
+  /// number of objects missing on primary
+  uint64_t num_objects_missing_on_primary;
+  /// number of objects found on no OSDs
+  uint64_t num_objects_unfound;
+  /// number of objects replicated fewer times than they should be
+  /// (but found on at least one OSD)
+  uint64_t num_objects_degraded;
+  /// number of objects read
+  uint64_t num_rd;
+  /// objects read in KB
+  uint64_t num_rd_kb;
+  /// number of objects written
+  uint64_t num_wr;
+  /// objects written in KB
+  uint64_t num_wr_kb;
+  /// bytes originally provided by user
+  uint64_t num_user_bytes;
+  /// bytes passed compression
+  uint64_t compressed_bytes_orig;
+  /// bytes resulted after compression
+  uint64_t compressed_bytes;
+  /// bytes allocated at storage
+  uint64_t compressed_bytes_alloc;
+};
+
+// Placement group, for PG commands
+struct PG {
+  uint64_t pool;
+  uint32_t seed;
+};
+
 // Come back and refactor this layer properly at some point.
 using Entry = librados::ListObjectImpl;
 class Cursor final {
@@ -473,7 +523,7 @@ public:
   template<typename CompletionToken>
   auto execute(const Object& o, const IOContext& ioc, ReadOp&& op,
 	       ceph::buffer::list* bl,
-	       CompletionToken&& token, version_t* objver = nullptr) {
+	       CompletionToken&& token, uint64_t* objver = nullptr) {
     boost::asio::async_completion<CompletionToken, Op::Signature> init(token);
     execute(o, ioc, std::move(op), bl,
 	    ReadOp::Completion::create(get_executor(),
@@ -484,7 +534,7 @@ public:
 
   template<typename CompletionToken>
   auto execute(const Object& o, const IOContext& ioc, WriteOp&& op,
-	       CompletionToken&& token, version_t* objver = nullptr) {
+	       CompletionToken&& token, uint64_t* objver = nullptr) {
     boost::asio::async_completion<CompletionToken, Op::Signature> init(token);
     execute(o, ioc, std::move(op),
 	    Op::Completion::create(get_executor(),
@@ -500,7 +550,7 @@ public:
 	       CompletionToken&& token,
 	       std::optional<std::string_view> ns = {},
 	       std::optional<std::string_view> key = {},
-	       version_t* objver = nullptr) {
+	       uint64_t* objver = nullptr) {
     boost::asio::async_completion<CompletionToken, Op::Signature> init(token);
     execute(o, pool, std::move(op), bl,
 	    ReadOp::Completion::create(get_executor(),
@@ -514,7 +564,7 @@ public:
 	       CompletionToken&& token,
 	       std::optional<std::string_view> ns = {},
 	       std::optional<std::string_view> key = {},
-	       version_t* objver = nullptr) {
+	       uint64_t* objver = nullptr) {
     boost::asio::async_completion<CompletionToken, Op::Signature> init(token);
     execute(o, pool, std::move(op),
 	    Op::Completion::create(get_executor(),
@@ -630,7 +680,7 @@ public:
 
   using PoolStatSig = void(boost::system::error_code,
 			   boost::container::flat_map<std::string,
-			                              pool_stat_t>, bool);
+			                              PoolStats>, bool);
   using PoolStatComp = ceph::async::Completion<PoolStatSig>;
   template<typename CompletionToken>
   auto stat_pools(const std::vector<std::string>& pools,
@@ -864,7 +914,7 @@ public:
     return init.result.get();
   }
   template<typename CompletionToken>
-  auto pg_command(pg_t pg, std::vector<std::string>&& cmd,
+  auto pg_command(PG pg, std::vector<std::string>&& cmd,
 		  ceph::buffer::list&& in, CompletionToken&& token) {
     boost::asio::async_completion<CompletionToken, CommandSig> init(token);
     pg_command(pg, std::move(cmd), std::move(in),
@@ -907,22 +957,22 @@ private:
 
   void execute(const Object& o, const IOContext& ioc, ReadOp&& op,
 	       ceph::buffer::list* bl, std::unique_ptr<Op::Completion> c,
-	       version_t* objver);
+	       uint64_t* objver);
 
   void execute(const Object& o, const IOContext& ioc, WriteOp&& op,
-	       std::unique_ptr<Op::Completion> c, version_t* objver);
+	       std::unique_ptr<Op::Completion> c, uint64_t* objver);
 
   void execute(const Object& o, std::int64_t pool, ReadOp&& op,
 	       ceph::buffer::list* bl, std::unique_ptr<Op::Completion> c,
 	       std::optional<std::string_view> ns,
 	       std::optional<std::string_view> key,
-	       version_t* objver);
+	       uint64_t* objver);
 
   void execute(const Object& o, std::int64_t pool, WriteOp&& op,
 	       std::unique_ptr<Op::Completion> c,
 	       std::optional<std::string_view> ns,
 	       std::optional<std::string_view> key,
-	       version_t* objver);
+	       uint64_t* objver);
 
   void lookup_pool(std::string_view name, std::unique_ptr<LookupPoolComp> c);
   void list_pools(std::unique_ptr<LSPoolsComp> c);
@@ -1012,7 +1062,7 @@ private:
 			 std::optional<std::string_view> key);
   void osd_command(int osd, std::vector<std::string>&& cmd,
 		   ceph::buffer::list&& in, std::unique_ptr<CommandComp> c);
-  void pg_command(pg_t pg, std::vector<std::string>&& cmd,
+  void pg_command(PG pg, std::vector<std::string>&& cmd,
 		  ceph::buffer::list&& in, std::unique_ptr<CommandComp> c);
 
   void mon_command(std::vector<std::string> command,
@@ -1034,6 +1084,10 @@ namespace std {
 template<>
 struct hash<RADOS::Object> {
   size_t operator ()(const RADOS::Object& r) const;
+};
+template<>
+struct hash<RADOS::IOContext> {
+  size_t operator ()(const RADOS::IOContext& r) const;
 };
 } // namespace std
 
