@@ -43,6 +43,11 @@ namespace cb = ceph::buffer;
 namespace RADOS {
 // Object
 
+Object::Object() {
+  static_assert(impl_size >= sizeof(object_t));
+  new (&impl) object_t();
+}
+
 Object::Object(std::string_view s) {
   static_assert(impl_size >= sizeof(object_t));
   new (&impl) object_t(s);
@@ -201,26 +206,14 @@ std::optional<std::string_view> IOContext::key() const {
 
 void IOContext::key(std::string_view _key) {
   auto& oloc = reinterpret_cast<IOContextImpl*>(&impl)->oloc;
-  if (_key.empty()) {
-    throw bs::system_error(EINVAL,
-			   bs::system_category(),
-			   "An empty key is no key at all.");
-  } else {
-    oloc.hash = -1;
-    oloc.key = _key;
-  }
+  oloc.hash = -1;
+  oloc.key = _key;
 }
 
 void IOContext::key(std::string&&_key) {
   auto& oloc = reinterpret_cast<IOContextImpl*>(&impl)->oloc;
-  if (_key.empty()) {
-    throw bs::system_error(EINVAL,
-			   bs::system_category(),
-			   "An empty key is no key at all.");
-  } else {
-    oloc.hash = -1;
-    oloc.key = std::move(_key);
-  }
+  oloc.hash = -1;
+  oloc.key = std::move(_key);
 }
 
 void IOContext::clear_key() {
@@ -239,14 +232,8 @@ std::optional<std::int64_t> IOContext::hash() const {
 
 void IOContext::hash(std::int64_t _hash) {
   auto& oloc = reinterpret_cast<IOContextImpl*>(&impl)->oloc;
-  if (_hash < 0) {
-    throw bs::system_error(EINVAL,
-			   bs::system_category(),
-			   "A negative hash is no hash at all.");
-  } else {
-    oloc.hash = _hash;
-    oloc.key.clear();
-  }
+  oloc.hash = _hash;
+  oloc.key.clear();
 }
 
 void IOContext::clear_hash() {
@@ -297,6 +284,60 @@ void IOContext::write_snap_context(
     }
   }
 }
+
+bool operator <(const IOContext& lhs, const IOContext& rhs) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&lhs.impl);
+  const auto r = reinterpret_cast<const IOContextImpl*>(&rhs.impl);
+
+  return (std::tie(l->oloc.pool, l->oloc.nspace, l->oloc.key) <
+	  std::tie(r->oloc.pool, r->oloc.nspace, r->oloc.key));
+}
+
+bool operator <=(const IOContext& lhs, const IOContext& rhs) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&lhs.impl);
+  const auto r = reinterpret_cast<const IOContextImpl*>(&rhs.impl);
+
+  return (std::tie(l->oloc.pool, l->oloc.nspace, l->oloc.key) <=
+	  std::tie(r->oloc.pool, r->oloc.nspace, r->oloc.key));
+}
+
+bool operator >=(const IOContext& lhs, const IOContext& rhs) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&lhs.impl);
+  const auto r = reinterpret_cast<const IOContextImpl*>(&rhs.impl);
+
+  return (std::tie(l->oloc.pool, l->oloc.nspace, l->oloc.key) >=
+	  std::tie(r->oloc.pool, r->oloc.nspace, r->oloc.key));
+}
+
+bool operator >(const IOContext& lhs, const IOContext& rhs) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&lhs.impl);
+  const auto r = reinterpret_cast<const IOContextImpl*>(&rhs.impl);
+
+  return (std::tie(l->oloc.pool, l->oloc.nspace, l->oloc.key) >
+	  std::tie(r->oloc.pool, r->oloc.nspace, r->oloc.key));
+}
+
+bool operator ==(const IOContext& lhs, const IOContext& rhs) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&lhs.impl);
+  const auto r = reinterpret_cast<const IOContextImpl*>(&rhs.impl);
+
+  return (std::tie(l->oloc.pool, l->oloc.nspace, l->oloc.key) ==
+	  std::tie(r->oloc.pool, r->oloc.nspace, r->oloc.key));
+}
+
+bool operator !=(const IOContext& lhs, const IOContext& rhs) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&lhs.impl);
+  const auto r = reinterpret_cast<const IOContextImpl*>(&rhs.impl);
+
+  return (std::tie(l->oloc.pool, l->oloc.nspace, l->oloc.key) !=
+	  std::tie(r->oloc.pool, r->oloc.nspace, r->oloc.key));
+}
+
+std::ostream& operator <<(std::ostream& m, const IOContext& o) {
+  const auto l = reinterpret_cast<const IOContextImpl*>(&o.impl);
+  return (m << l->oloc.pool << ":" << l->oloc.nspace << ":" << l->oloc.key);
+}
+
 
 // Op
 
@@ -899,9 +940,41 @@ void RADOS::stat_pools(const std::vector<std::string>& pools,
     pools,
     [c = std::move(c)]
     (bs::error_code ec,
-     bc::flat_map<std::string, pool_stat_t> s,
-     bool p) mutable {
-      ca::dispatch(std::move(c), ec, std::move(s), p);
+     bc::flat_map<std::string, pool_stat_t> rawresult,
+     bool per_pool) mutable {
+      bc::flat_map<std::string, PoolStats> result;
+      for (auto p = rawresult.begin(); p != rawresult.end(); ++p) {
+	auto& pv = result[p->first];
+	auto& pstat = p->second;
+	store_statfs_t &statfs = pstat.store_stats;
+	uint64_t allocated_bytes = pstat.get_allocated_data_bytes(per_pool) +
+	  pstat.get_allocated_omap_bytes(per_pool);
+	// FIXME: raw_used_rate is unknown hence use 1.0 here
+	// meaning we keep net amount aggregated over all replicas
+	// Not a big deal so far since this field isn't exposed
+	uint64_t user_bytes = pstat.get_user_data_bytes(1.0, per_pool) +
+	  pstat.get_user_omap_bytes(1.0, per_pool);
+
+	object_stat_sum_t *sum = &p->second.stats.sum;
+	pv.num_kb = shift_round_up(allocated_bytes, 10);
+	pv.num_bytes = allocated_bytes;
+	pv.num_objects = sum->num_objects;
+	pv.num_object_clones = sum->num_object_clones;
+	pv.num_object_copies = sum->num_object_copies;
+	pv.num_objects_missing_on_primary = sum->num_objects_missing_on_primary;
+	pv.num_objects_unfound = sum->num_objects_unfound;
+	pv.num_objects_degraded = sum->num_objects_degraded;
+	pv.num_rd = sum->num_rd;
+	pv.num_rd_kb = sum->num_rd_kb;
+	pv.num_wr = sum->num_wr;
+	pv.num_wr_kb = sum->num_wr_kb;
+	pv.num_user_bytes = user_bytes;
+	pv.compressed_bytes_orig = statfs.data_compressed_original;
+	pv.compressed_bytes = statfs.data_compressed;
+	pv.compressed_bytes_alloc = statfs.data_compressed_allocated;
+      }
+
+      ca::dispatch(std::move(c), ec, std::move(result), per_pool);
     });
 }
 
@@ -1411,9 +1484,9 @@ void RADOS::osd_command(int osd, std::vector<std::string>&& cmd,
 					     std::move(b));
 			      });
 }
-void RADOS::pg_command(pg_t pg, std::vector<std::string>&& cmd,
+void RADOS::pg_command(PG pg, std::vector<std::string>&& cmd,
 		       ceph::bufferlist&& in, std::unique_ptr<CommandComp> c) {
-  impl->objecter->pg_command(pg, std::move(cmd), std::move(in), nullptr,
+  impl->objecter->pg_command(pg_t{pg.seed, pg.pool}, std::move(cmd), std::move(in), nullptr,
 			     [c = std::move(c)]
 			     (bs::error_code ec,
 			      std::string&& s,
@@ -1464,6 +1537,10 @@ void RADOS::mon_command(std::vector<std::string> command,
 uint64_t RADOS::instance_id() const {
   return impl->get_instance_id();
 }
+
+CephContext* RADOS::cct() {
+  return impl->cct;
+}
 }
 
 namespace std {
@@ -1471,5 +1548,13 @@ size_t hash<RADOS::Object>::operator ()(
   const RADOS::Object& r) const {
   static constexpr const hash<object_t> H;
   return H(*reinterpret_cast<const object_t*>(&r.impl));
+}
+
+size_t hash<RADOS::IOContext>::operator ()(
+  const RADOS::IOContext& r) const {
+  static constexpr const hash<int64_t> H;
+  static constexpr const hash<std::string> G;
+  const auto l = reinterpret_cast<const RADOS::IOContextImpl*>(&r.impl);
+  return H(l->oloc.pool) ^ (G(l->oloc.nspace) << 1) ^ (G(l->oloc.key) << 2);
 }
 }
