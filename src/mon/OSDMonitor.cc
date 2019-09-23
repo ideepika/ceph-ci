@@ -1005,6 +1005,79 @@ void OSDMonitor::prime_pg_temp(
   int next_up_primary, next_acting_primary;
   next.pg_to_up_acting_osds(pgid, &next_up, &next_up_primary,
 			    &next_acting, &next_acting_primary);
+  do {
+    if (!g_conf->mon_osd_prime_pg_upmap)
+      break; // not enabled
+
+    if (next.require_min_compat_client < CEPH_RELEASE_LUMINOUS) {
+      dout(5) << __func__ << " min_compat_client "
+              << next.require_min_compat_client
+              << " < luminous, which is required for pg-upmap. "
+              << "Try 'ceph osd set-require-min-compat-client luminous' "
+              << "before using the new feature"
+              << dendl;
+      break;
+    }
+
+    if ((size_t)osdmap.get_pg_pool_size(pgid) != up.size() ||
+        (size_t)next.get_pg_pool_size(pgid) != next_up.size()) {
+      dout(10) << __func__ << " pg " << pgid << " degraded" << dendl;
+      break;
+    }
+
+    bool do_upmap = false;
+    // don't bother if we need to switch primary only
+    set<int> up_set(up.begin(), up.end());
+    set<int> next_up_set(next_up.begin(), next_up.end());
+    if (next_up_set != up_set && next_up == next_acting) {
+      // check for interesting OSDs
+      set<int> osds;
+      for (int i = 0; i < next.get_max_osd(); i++) {
+        if (osdmap.is_up(i) && osdmap.is_in(i) &&
+            next.is_up(i) && next.is_in(i)) {
+          string old_class, new_class;
+          const char *c = osdmap.crush->get_item_class(i);
+          if (c)
+            old_class = c;
+          c = next.crush->get_item_class(i);
+          if (c)
+            new_class = c;
+          if (new_class != old_class) {
+            dout(10) << __func__ << " device class of osd." << i
+                     << " changed" << dendl;
+            osds.insert(i);
+          }
+        }
+      }
+      if (osds.empty()) {
+        dout(10) << __func__ << " no interesting osds" << dendl;
+        break;
+      }
+      vector<int> diff;
+      // NB: we must not change up/next_up directly..
+      auto u1 = up;
+      auto u2 = next_up;
+      std::sort(u1.begin(), u1.end());
+      std::sort(u2.begin(), u2.end());
+      std::set_symmetric_difference(u1.begin(), u1.end(),
+                                    u2.begin(), u2.end(),
+                                    std::back_inserter(diff));
+      dout(10) << __func__ << " check if diff " << diff
+               << " contains any interesting osds " << osds
+               << dendl;
+      do_upmap = std::find_if(diff.begin(), diff.end(),
+        [&osds](const int i) { return osds.count(i); }) != diff.end();
+    }
+    if (do_upmap) {
+      dout(10) << __func__ << " add pg_upmap " << up << " for pg " << pgid
+               << dendl;
+      Mutex::Locker l(prime_pg_temp_lock);
+      // revert to previous up
+      pending_inc.new_pg_upmap[pgid] =
+        mempool::osdmap::vector<int32_t>(up.begin(), up.end());
+    }
+  } while (false);
+
   if (acting == next_acting &&
       !(up != acting && next_up == next_acting))
     return;  // no change since last epoch
