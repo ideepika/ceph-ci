@@ -36,10 +36,10 @@ class GenContext {
   GenContext(const GenContext& other);
   const GenContext& operator=(const GenContext& other);
 
- protected:
+protected:
   virtual void finish(T t) = 0;
 
- public:
+public:
   GenContext() {}
   virtual ~GenContext() {}       // we want a virtual destructor!!!
 
@@ -61,7 +61,7 @@ class Context {
   Context(const Context& other);
   const Context& operator=(const Context& other);
 
- protected:
+protected:
   virtual void finish(int r) = 0;
 
   // variant of finish that is safe to call "synchronously."  override should
@@ -70,7 +70,7 @@ class Context {
     return false;
   }
 
- public:
+public:
   Context() {}
   virtual ~Context() {}       // we want a virtual destructor!!!
   virtual void complete(int r) {
@@ -207,8 +207,8 @@ public:
 
   C_ContextsBase(CephContext *cct_)
     : cct(cct_)
-  {
-  }
+    {
+    }
   ~C_ContextsBase() override {
     for (auto c : contexts) {
       delete c;
