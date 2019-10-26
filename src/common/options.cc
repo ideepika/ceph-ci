@@ -1664,6 +1664,10 @@ std::vector<Option> get_global_options() {
     .set_description("Maximum number of PGs we can attempt to unmap or upmap "
                      "for a specific overfull or underfull osd per iteration "),
 
+    Option("osd_calc_pg_upmaps_optimize_primary", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description("try to balance primary too if possible"),
+
     Option("journaler_prezero_periods", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(5)
     .set_description(""),

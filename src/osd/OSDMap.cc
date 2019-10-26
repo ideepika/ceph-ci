@@ -4016,8 +4016,11 @@ int OSDMap::calc_pg_upmaps(
     max_deviation = 1;
   tmp.deepish_copy_from(*this);
   int num_changed = 0;
+  auto target_change = max;
   map<int,set<pg_t>> pgs_by_osd;
+  map<int,set<pair<pg_t, vector<int>>>> pgs_by_primary;
   int total_pgs = 0;
+  int total_primaries = 0;
   float osd_weight_total = 0;
   map<int,float> osd_weight;
   for (auto& i : pools) {
@@ -4026,14 +4029,19 @@ int OSDMap::calc_pg_upmaps(
     for (unsigned ps = 0; ps < i.second.get_pg_num(); ++ps) {
       pg_t pg(ps, i.first);
       vector<int> up;
-      tmp.pg_to_up_acting_osds(pg, &up, nullptr, nullptr, nullptr);
-      ldout(cct, 20) << __func__ << " " << pg << " up " << up << dendl;
+      int up_primary;
+      tmp.pg_to_up_acting_osds(pg, &up, &up_primary, nullptr, nullptr);
+      ldout(cct, 20) << __func__ << " " << pg << " up " << up
+                     << " up_primary " << up_primary << dendl;
+      if (up_primary >= 0)
+        pgs_by_primary[up_primary].insert({pg, up});
       for (auto osd : up) {
         if (osd != CRUSH_ITEM_NONE)
 	  pgs_by_osd[osd].insert(pg);
       }
     }
     total_pgs += i.second.get_size() * i.second.get_pg_num();
+    total_primaries += i.second.get_pg_num();
 
     map<int,float> pmap;
     int ruleno = tmp.crush->find_rule(i.second.get_crush_rule(),
@@ -4060,16 +4068,25 @@ int OSDMap::calc_pg_upmaps(
 	pgs = p->second.size();
     else
 	pgs_by_osd.emplace(i.first, set<pg_t>());
+    int primaries = 0;
+    auto q = pgs_by_primary.find(i.first);
+    if (q != pgs_by_primary.end())
+      primaries = q->second.size();
+    else
+      pgs_by_primary.emplace(i.first, set<pair<pg_t, vector<int>>>());
     ldout(cct, 20) << " osd." << i.first << " weight " << i.second
-		     << " pgs " << pgs << dendl;
+                   << " pgs " << pgs
+                   << " (" << primaries << " primaries)" << dendl;
   }
   if (osd_weight_total == 0) {
     lderr(cct) << __func__ << " abort due to osd_weight_total == 0" << dendl;
     return 0;
   }
   float pgs_per_weight = total_pgs / osd_weight_total;
+  float primaries_per_weight = total_primaries / osd_weight_total;
   ldout(cct, 10) << " osd_weight_total " << osd_weight_total << dendl;
   ldout(cct, 10) << " pgs_per_weight " << pgs_per_weight << dendl;
+  ldout(cct, 10) << " primaries_per_weight " << primaries_per_weight << dendl;
 
   if (max <= 0) {
     lderr(cct) << __func__ << " abort due to max <= 0" << dendl;
@@ -4096,16 +4113,15 @@ int OSDMap::calc_pg_upmaps(
       cur_max_deviation = fabsf(deviation);
   }
   ldout(cct, 20) << " stdev " << stddev << " max_deviation " << cur_max_deviation << dendl;
-  if (cur_max_deviation <= max_deviation) {
-    ldout(cct, 10) << __func__ << " distribution is almost perfect"
-                   << dendl;
-    return 0;
-  }
   bool skip_overfull = false;
-  auto aggressive =
-    cct->_conf->get_val<bool>("osd_calc_pg_upmaps_aggressively");
+  auto aggressive = cct->_conf->get_val<bool>("osd_calc_pg_upmaps_aggressively");
   auto local_fallback_retries =
     cct->_conf->get_val<uint64_t>("osd_calc_pg_upmaps_local_fallback_retries");
+ if (cur_max_deviation <= max_deviation) {
+    ldout(cct, 10) << __func__ << " distribution is almost perfect"
+                   << dendl;
+    goto optimize_primary;
+  }
   while (max--) {
     ldout(cct, 30) << "Top of loop #" << max+1 << dendl;
     // build overfull and underfull
@@ -4496,6 +4512,157 @@ int OSDMap::calc_pg_upmaps(
       ldout(cct, 10) << __func__ << " Optimization plan is almost perfect"
                      << dendl;
       break;
+    }
+  }
+
+optimize_primary:
+
+  if (!cct->_conf->get_val<bool>("osd_calc_pg_upmaps_optimize_primary")) {
+    ldout(cct, 5) << " osd_calc_pg_upmaps_optimize_primary not enabled"
+                   << dendl;
+    ldout(cct, 10) << " num_changed = " << num_changed << dendl;
+    return num_changed;
+  }
+  if (num_changed >= target_change) {
+    // already prepard enough changes
+    ldout(cct, 10) << " num_changed = " << num_changed << dendl;
+    return num_changed;
+  }
+  max = target_change - num_changed;
+  vector<pair<int, set<pair<pg_t, vector<int>>>>> ordered_pgs_by_primary;
+  ordered_pgs_by_primary.reserve(pgs_by_primary.size());
+  for (auto& i : pgs_by_primary)
+    ordered_pgs_by_primary.push_back({i.first, i.second});
+  while (max--) {
+    // sort by number of primaries, in descending order.
+    std::sort(ordered_pgs_by_primary.begin(),
+              ordered_pgs_by_primary.end(),
+              [](const pair<int, set<pair<pg_t, vector<int>>>> &lhs,
+                 const pair<int, set<pair<pg_t, vector<int>>>> &rhs) {
+                return lhs.second.size() > rhs.second.size();
+              });
+
+    stddev = 0;
+    cur_max_deviation = 0;
+    vector<int> overfull, underfull;
+    for (auto it = ordered_pgs_by_primary.begin();
+         it != ordered_pgs_by_primary.end(); it++) {
+      auto primary = it->first;
+      ceph_assert(osd_weight.count(primary));
+      float target = osd_weight[primary] * primaries_per_weight;
+      float deviation = (float)it->second.size() - target;
+      ldout(cct, 20) << " primary osd." << primary
+                     << "\tof pgs " << it->second.size()
+                     << "\ttarget " << target
+                     << "\tdeviation " << deviation
+                     << dendl;
+      if (fabsf(deviation) > cur_max_deviation)
+        cur_max_deviation = fabsf(deviation);
+      stddev += deviation * deviation;
+      if (deviation > 0)
+        overfull.push_back(primary); // most overfull -> least overfull
+      if (deviation < 0)
+        underfull.push_back(primary); // least underfull -> most underfull
+    }
+    if (cur_max_deviation <= max_deviation) {
+      ldout(cct, 10) << __func__ << " abort as distribution of primary"
+                     << " is almost perfect" << dendl;
+      ldout(cct, 10) << " num_changed = " << num_changed << dendl;
+      return num_changed;
+    }
+    ldout(cct, 10) << __func__ << " overfull " << overfull
+                   << " underfull " << underfull << dendl;
+    if (overfull.empty() || underfull.empty()) {
+      ldout(cct, 10) << __func__ << " abort as overfull/underfull is empty"
+                     << dendl;
+      ldout(cct, 10) << " num_changed = " << num_changed << dendl;
+      return num_changed;
+    }
+    auto temp_ordered_pgs_by_primary = ordered_pgs_by_primary; // clone
+    map<pg_t, vector<int>> new_pg_upmap;
+    for (auto& i : ordered_pgs_by_primary) {
+      auto primary = i.first;
+      ldout(cct, 10) << " consider primary " << primary
+                     << " pgs " << i.second << dendl;
+      if (std::find(overfull.begin(), overfull.end(), primary) ==
+                    overfull.end())
+        break;
+      for (const auto& j : i.second) {
+        auto& pg = j.first;
+        auto& up = j.second;
+        ldout(cct, 10) << " consider pg " << pg << " up " << up << dendl;
+        ceph_assert(std::find(up.begin(), up.end(), primary) != up.end());
+        int candidate = -1;
+        for (auto k : up) {
+          if (k == primary || k == CRUSH_ITEM_NONE)
+            continue;
+          auto kit = std::find(underfull.begin(), underfull.end(), k);
+          if (kit == underfull.end())
+            continue;
+          if (candidate == -1) {
+            candidate = k;
+            continue;
+          }
+          auto cit = std::find(underfull.begin(), underfull.end(), candidate);
+          ceph_assert(cit != underfull.end());
+          if (std::distance(underfull.begin(), kit) >
+              std::distance(underfull.begin(), cit))
+             candidate = k;
+        }
+        if (candidate != -1) {
+          // generate new up set
+          vector<int> new_up(up);
+          auto oit = std::find(new_up.begin(), new_up.end(), primary);
+          auto nit = std::find(new_up.begin(), new_up.end(), candidate);
+          std::iter_swap(oit, nit);
+          auto eit = std::find(temp_ordered_pgs_by_primary.begin(),
+                               temp_ordered_pgs_by_primary.end(), i);
+          ceph_assert(eit != temp_ordered_pgs_by_primary.end());
+          eit->second.erase({pg, up});
+          for (auto& t : temp_ordered_pgs_by_primary) {
+            if (t.first == candidate) {
+              t.second.insert({pg, new_up});
+              break;
+            }
+          }
+          new_pg_upmap[pg] = new_up;
+          break;
+        }
+      }
+      if (!new_pg_upmap.empty())
+        break;
+    }
+    if (new_pg_upmap.empty()) {
+      ldout(cct, 10) << " unable to find any further primary optimizations"
+                     << dendl;
+      ldout(cct, 10) << " num_changed = " << num_changed << dendl;
+      return num_changed;
+    }
+    float new_stddev = 0;
+    for (auto& i : temp_ordered_pgs_by_primary) {
+      auto primary = i.first;
+      ceph_assert(osd_weight.count(primary));
+      float target = osd_weight[primary] * primaries_per_weight;
+      float deviation = (float)i.second.size() - target;
+      ldout(cct, 20) << " primary osd." << primary
+                     << "\tof pgs " << i.second.size()
+                     << "\ttarget " << target
+                     << "\tdeviation " << deviation
+                     << dendl;
+      new_stddev += deviation * deviation;
+    }
+    if (new_stddev < stddev) {
+      ordered_pgs_by_primary = temp_ordered_pgs_by_primary;
+      stddev = new_stddev;
+      for (auto& i : new_pg_upmap) {
+        ldout(cct, 5) << " upmap pg " << i.first
+                      << " new pg_upmap " << i.second
+                      << dendl;
+        pending_inc->new_pg_upmap[i.first] =
+          mempool::osdmap::vector<int32_t>(i.second.begin(), i.second.end());
+        pending_inc->old_pg_upmap_items.insert(i.first);
+        ++num_changed;
+      }
     }
   }
   ldout(cct, 10) << " num_changed = " << num_changed << dendl;
