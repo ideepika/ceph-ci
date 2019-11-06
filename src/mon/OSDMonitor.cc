@@ -10209,16 +10209,61 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto wait;
     if (err < 0)
       goto reply;
-    string pgidstr;
-    if (!cmd_getval_throws(g_ceph_context, cmdmap, "pgid", pgidstr)) {
+    string who;
+    if ((prefix == "osd pg-upmap" || prefix == "osd pg-upmap-items") &&
+         !cmd_getval_throws(g_ceph_context, cmdmap, "pgid", who)) {
       ss << "unable to parse 'pgid' value '"
          << cmd_vartype_stringify(cmdmap["pgid"]) << "'";
       err = -EINVAL;
       goto reply;
     }
+    if ((prefix == "osd rm-pg-upmap" || prefix == "osd rm-pg-upmap-items") &&
+        !cmd_getval_throws(g_ceph_context, cmdmap, "who", who)) {
+      ss << "unable to parse 'who' value '"
+         << cmd_vartype_stringify(cmdmap["who"]) << "'";
+      err = -EINVAL;
+      goto reply;
+    }
     pg_t pgid;
-    if (!pgid.parse(pgidstr.c_str())) {
-      ss << "invalid pgid '" << pgidstr << "'";
+    if ((prefix == "osd rm-pg-upmap" || prefix == "osd rm-pg-upmap-items") &&
+        !pgid.parse(who.c_str())) {
+      bool all = who == "*" || who == "all" || who == "any";
+      auto pool = osdmap.lookup_pg_pool_name(who);
+      if (!all && pool < 0) {
+        ss << "invalid who string '" << who << "'";
+        err = -EINVAL;
+        goto reply;
+      }
+      if (prefix == "osd rm-pg-upmap") {
+        for (auto& p : osdmap.pg_upmap) {
+          if ((int64_t)p.first.pool() == pool || all)
+            pending_inc.old_pg_upmap.insert(p.first);
+        }
+        auto it = pending_inc.new_pg_upmap.begin();
+        while (it != pending_inc.new_pg_upmap.end()) {
+          if ((int64_t)it->first.pool() == pool || all)
+            pending_inc.new_pg_upmap.erase(it++);
+          else
+            it++;
+        }
+      }
+      if (prefix == "osd rm-pg-upmap-items") {
+        for (auto& p : osdmap.pg_upmap_items) {
+          if ((int64_t)p.first.pool() == pool || all)
+            pending_inc.old_pg_upmap_items.insert(p.first);
+        }
+        auto it = pending_inc.new_pg_upmap_items.begin();
+        while (it != pending_inc.new_pg_upmap_items.end()) {
+          if ((int64_t)it->first.pool() == pool || all)
+            pending_inc.new_pg_upmap_items.erase(it++);
+          else
+            it++;
+        }
+      }
+      goto update;
+    }
+    if (!pgid.parse(who.c_str())) {
+      ss << "invalid pgid '" << who << "'";
       err = -EINVAL;
       goto reply;
     }
