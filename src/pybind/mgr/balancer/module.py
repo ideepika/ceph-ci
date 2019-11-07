@@ -802,7 +802,7 @@ class Module(MgrModule):
 
     def do_upmap(self, plan):
         self.log.info('do_upmap')
-        max_iterations = int(self.get_config('upmap_max_iterations', 10))
+        max_optimizations = int(self.get_config('upmap_max_optimizations', 10))
         max_deviation = int(self.get_config('upmap_max_deviation', 5))
 
         ms = plan.initial
@@ -820,14 +820,14 @@ class Module(MgrModule):
 
         inc = plan.inc
         total_did = 0
-        left = max_iterations
+        left = max_optimizations
         for pool in pools:
             did = ms.osdmap.calc_pg_upmaps(inc, max_deviation, left, [pool])
             total_did += did
             left -= did
             if left <= 0:
                 break
-        self.log.info('prepared %d/%d changes' % (total_did, max_iterations))
+        self.log.info('prepared %d/%d changes' % (total_did, max_optimizations))
         if total_did == 0:
             return -errno.EALREADY, 'Unable to find further optimization, ' \
                                     'or distribution is already perfect'
