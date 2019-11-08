@@ -491,7 +491,8 @@ class Module(MgrModule):
         # bit hacky, might include uuid to ensure uniqueness someday..
         plan_name = 'for_empty_pools'
         plan = self.plan_create(plan_name, osdmap, empty_pools)
-        r = self.optimize(plan)
+        # balancing empty pools 5x faster
+        r = self.optimize(plan, 5)
         if r[0] >= 0:
             r = self.execute(plan)
         if r[0] == -errno.EPERM and plan.mode == 'upmap':
@@ -753,7 +754,7 @@ class Module(MgrModule):
         pe = self.calc_eval(ms, pools)
         return pe.show(verbose=verbose)
 
-    def optimize(self, plan):
+    def optimize(self, plan, opt_multiplier=1):
         self.log.info('Optimize plan %s' % plan.name)
         plan.mode = self.get_config('mode', default_mode)
         max_misplaced = float(self.get_config('max_misplaced',
@@ -787,7 +788,7 @@ class Module(MgrModule):
             return -errno.EAGAIN, detail
         else:
             if plan.mode == 'upmap':
-                return self.do_upmap(plan)
+                return self.do_upmap(plan, opt_multiplier)
             elif plan.mode == 'crush-compat':
                 return self.do_crush_compat(plan)
             elif plan.mode == 'none':
@@ -799,9 +800,10 @@ class Module(MgrModule):
                 self.log.info(detail)
                 return -errno.EINVAL, detail
 
-    def do_upmap(self, plan):
+    def do_upmap(self, plan, opt_multiplier=1):
         self.log.info('do_upmap')
         max_optimizations = int(self.get_config('upmap_max_optimizations', 10))
+        max_optimizations = max_optimizations * opt_multiplier
         max_deviation = int(self.get_config('upmap_max_deviation', 5))
 
         ms = plan.initial
