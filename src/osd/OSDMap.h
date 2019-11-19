@@ -1011,12 +1011,14 @@ public:
   bool check_pg_upmaps(
     CephContext *cct,
     const vector<pg_t>& to_check,
-    vector<pg_t> *to_cancel,
+    set<pg_t> *up_to_cancel, // pg_upmap to cancel
+    set<pg_t> *ui_to_cancel, // pg_upmap_items to cancel
     map<pg_t, mempool::osdmap::vector<pair<int,int>>> *to_remap) const;
   void clean_pg_upmaps(
     CephContext *cct,
     Incremental *pending_inc,
-    const vector<pg_t>& to_cancel,
+    const set<pg_t>& up_to_cancel, // pg_upmap to cancel
+    const set<pg_t>& ui_to_cancel, // pg_upmap_items to cancel
     const map<pg_t, mempool::osdmap::vector<pair<int,int>>>& to_remap) const;
   bool clean_pg_upmaps(CephContext *cct, Incremental *pending_inc) const;
 

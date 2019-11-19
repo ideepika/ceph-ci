@@ -911,78 +911,6 @@ TEST_F(OSDMapTest, CleanPGUpmaps) {
   }
 
   {
-    // TEST pg_upmap
-    {
-      // STEP-1: enumerate all children of up[0]'s parent,
-      // replace up[1] with one of them (other than up[0])
-      int parent = osdmap.crush->get_parent_of_type(up[0],
-        osdmap.crush->get_type_id("host"));
-      set<int> candidates;
-      osdmap.crush->get_leaves(osdmap.crush->get_item_name(parent), &candidates);
-      ASSERT_LT(1U, candidates.size());
-      int replaced_by = -1;
-      for (auto c: candidates) {
-        if (c != up[0]) {
-          replaced_by = c;
-          break;
-        }
-      }
-      {
-        // Check we can handle a negative pg_upmap value
-        vector<int32_t> new_pg_upmap;
-        new_pg_upmap.push_back(up[0]);
-        new_pg_upmap.push_back(-823648512);
-        OSDMap::Incremental pending_inc(osdmap.get_epoch() + 1);
-        pending_inc.new_pg_upmap[pgid] = mempool::osdmap::vector<int32_t>(
-            new_pg_upmap.begin(), new_pg_upmap.end());
-        osdmap.apply_incremental(pending_inc);
-        vector<int> new_up;
-        int new_up_primary;
-        // crucial call - _apply_upmap should ignore the negative value
-        osdmap.pg_to_raw_up(pgid, &new_up, &new_up_primary);
-      }
-      ASSERT_NE(-1, replaced_by);
-      // generate a new pg_upmap item and apply
-      vector<int32_t> new_pg_upmap;
-      new_pg_upmap.push_back(up[0]);
-      new_pg_upmap.push_back(replaced_by); // up[1] -> replaced_by
-      OSDMap::Incremental pending_inc(osdmap.get_epoch() + 1);
-      pending_inc.new_pg_upmap[pgid] = mempool::osdmap::vector<int32_t>(
-        new_pg_upmap.begin(), new_pg_upmap.end());
-      osdmap.apply_incremental(pending_inc);
-      {
-        // validate pg_upmap is there
-        vector<int> new_up;
-        int new_up_primary;
-        osdmap.pg_to_raw_up(pgid, &new_up, &new_up_primary);
-        ASSERT_TRUE(up.size() == new_up.size());
-        ASSERT_TRUE(new_up[0] == new_pg_upmap[0]);
-        ASSERT_TRUE(new_up[1] == new_pg_upmap[1]);
-        // and we shall have two OSDs from a same host now..
-        int parent_0 = osdmap.crush->get_parent_of_type(new_up[0],
-          osdmap.crush->get_type_id("host"));
-        int parent_1 = osdmap.crush->get_parent_of_type(new_up[1],
-          osdmap.crush->get_type_id("host"));
-        ASSERT_TRUE(parent_0 == parent_1);
-      }
-    }
-    {
-      // STEP-2: apply cure
-      OSDMap::Incremental pending_inc(osdmap.get_epoch() + 1);
-      clean_pg_upmaps(g_ceph_context, osdmap, pending_inc);
-      osdmap.apply_incremental(pending_inc);
-      {
-        // validate pg_upmap is gone (reverted)
-        vector<int> new_up;
-        int new_up_primary;
-        osdmap.pg_to_raw_up(pgid, &new_up, &new_up_primary);
-        ASSERT_TRUE(new_up == up);
-        ASSERT_TRUE(new_up_primary = up_primary);
-      }
-    }
-  }
-
-  {
     // TEST pg_upmap_items
     // enumerate all used hosts first
     set<int> parents;
@@ -1450,14 +1378,6 @@ TEST_F(OSDMapTest, BUG_42052) {
   ASSERT_TRUE(osdmap.get_pool_name(pool_id) == pool_name);
   pg_t rawpg(0, pool_id);
   pg_t pgid = osdmap.raw_pg_to_pg(rawpg);
-  {
-    // pg_upmap 1.0 [2,3,5]
-    vector<int32_t> new_up{2,3,5};
-    OSDMap::Incremental pending_inc(osdmap.get_epoch() + 1);
-    pending_inc.new_pg_upmap[pgid] = mempool::osdmap::vector<int32_t>(
-      new_up.begin(), new_up.end());
-    osdmap.apply_incremental(pending_inc);
-  }
   {
     // pg_upmap_items 1.0 [0,3,4,5]
     vector<pair<int32_t,int32_t>> new_pg_upmap_items;

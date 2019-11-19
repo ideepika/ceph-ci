@@ -181,13 +181,15 @@ public:
         pending_inc(pi) {}
 
     void process(const vector<pg_t>& to_check) override {
-      vector<pg_t> to_cancel;
+      set<pg_t> up_to_cancel, ui_to_cancel;
       map<pg_t, mempool::osdmap::vector<pair<int,int>>> to_remap;
-      osdmap.check_pg_upmaps(cct, to_check, &to_cancel, &to_remap);
+      osdmap.check_pg_upmaps(
+        cct, to_check, &up_to_cancel, &ui_to_cancel, &to_remap);
       // don't bother taking lock if nothing changes
-      if (!to_cancel.empty() || !to_remap.empty()) {
+      if (!up_to_cancel.empty() || !ui_to_cancel.empty() || !to_remap.empty()) {
         Mutex::Locker l(pending_inc_lock);
-        osdmap.clean_pg_upmaps(cct, &pending_inc, to_cancel, to_remap);
+        osdmap.clean_pg_upmaps(
+          cct, &pending_inc, up_to_cancel, ui_to_cancel, to_remap);
       }
     }
 
