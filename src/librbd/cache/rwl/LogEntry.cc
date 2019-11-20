@@ -88,14 +88,14 @@ std::ostream &operator<<(std::ostream &os,
 }
 
 void WriteLogEntry::init_pmem_bp() {
-  assert(!pmem_bp.get_raw());
+  ceph_assert(!pmem_bp.get_raw());
   pmem_bp = buffer::ptr(buffer::create_static(this->write_bytes(), (char*)pmem_buffer));
 }
 
 void WriteLogEntry::init_pmem_bl() {
   pmem_bl.clear();
   init_pmem_bp();
-  assert(pmem_bp.get_raw());
+  ceph_assert(pmem_bp.get_raw());
   int before_bl = pmem_bp.raw_nref();
   this->init_bl(pmem_bp, pmem_bl);
   int after_bl = pmem_bp.raw_nref();
@@ -117,7 +117,7 @@ buffer::list& WriteLogEntry::get_pmem_bl(ceph::mutex &entry_bl_lock) {
     if (0 == bl_refs) {
       init_pmem_bl();
     }
-    assert(0 != bl_refs);
+    ceph_assert(0 != bl_refs);
   }
   return pmem_bl;
 };
