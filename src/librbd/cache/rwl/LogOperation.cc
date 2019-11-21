@@ -8,7 +8,7 @@
 #define dout_subsys ceph_subsys_rbd
 #undef dout_prefix
 #define dout_prefix *_dout << "librbd::cache::rwl::LogOperation: " << this << " " \
-			   <<  __func__ << ": "
+                           <<  __func__ << ": "
 
 namespace librbd {
 
@@ -33,7 +33,7 @@ std::ostream& GenericLogOperation<T>::format(std::ostream &os) const {
 
 template <typename T>
 std::ostream &operator<<(std::ostream &os,
-                                const GenericLogOperation<T> &op) {
+                         const GenericLogOperation<T> &op) {
   return op.format(os);
 }
 
@@ -58,7 +58,7 @@ std::ostream &SyncPointLogOperation<T>::format(std::ostream &os) const {
 
 template <typename T>
 std::ostream &operator<<(std::ostream &os,
-                                const SyncPointLogOperation<T> &op) {
+                         const SyncPointLogOperation<T> &op) {
   return op.format(os);
 }
 
@@ -136,7 +136,7 @@ std::ostream &GeneralWriteLogOperation<T>::format(std::ostream &os) const {
 
 template <typename T>
 std::ostream &operator<<(std::ostream &os,
-                                const GeneralWriteLogOperation<T> &op) {
+                         const GeneralWriteLogOperation<T> &op) {
   return op.format(os);
 }
 
@@ -212,7 +212,7 @@ std::ostream &WriteLogOperation<T>::format(std::ostream &os) const {
 
 template <typename T>
 std::ostream &operator<<(std::ostream &os,
-                                const WriteLogOperation<T> &op) {
+                         const WriteLogOperation<T> &op) {
   return op.format(os);
 }
 
@@ -220,9 +220,9 @@ std::ostream &operator<<(std::ostream &os,
 template <typename T>
 WriteLogOperationSet<T>::WriteLogOperationSet(T &rwl, utime_t dispatched, std::shared_ptr<SyncPoint<T>> sync_point,
                                               bool persist_on_flush, Context *on_finish)
-  : rwl(rwl), m_on_finish(on_finish),
+  : m_on_finish(on_finish), rwl(rwl),
     persist_on_flush(persist_on_flush), dispatch_time(dispatched), sync_point(sync_point) {
-  on_ops_appending = sync_point->m_prior_log_entries_persisted->new_sub();
+  on_ops_appending = sync_point->prior_log_entries_persisted->new_sub();
   on_ops_persist = nullptr;
   extent_ops_persist =
     new C_Gather(rwl.m_image_ctx.cct,

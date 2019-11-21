@@ -35,9 +35,15 @@ public:
   bool is_write();
   bool is_writer();
   virtual const GenericLogEntry* get_log_entry() = 0;
-  virtual const SyncPointLogEntry* get_sync_point_log_entry() { return nullptr;}
-  virtual const GeneralWriteLogEntry* get_gen_write_log_entry() { return nullptr; }
-  virtual const WriteLogEntry* get_write_log_entry() { return nullptr; }
+  virtual const SyncPointLogEntry* get_sync_point_log_entry() {
+    return nullptr;
+  }
+  virtual const GeneralWriteLogEntry* get_gen_write_log_entry() {
+    return nullptr;
+  }
+  virtual const WriteLogEntry* get_write_log_entry() {
+    return nullptr;
+  }
   virtual std::ostream& format(std::ostream &os) const;
   friend std::ostream &operator<<(std::ostream &os,
                                   const GenericLogEntry &entry);
@@ -62,9 +68,15 @@ public:
   };
   SyncPointLogEntry(const SyncPointLogEntry&) = delete;
   SyncPointLogEntry &operator=(const SyncPointLogEntry&) = delete;
-  virtual inline unsigned int write_bytes() { return 0; }
-  const GenericLogEntry* get_log_entry() override { return get_sync_point_log_entry(); }
-  const SyncPointLogEntry* get_sync_point_log_entry() override { return this; }
+  virtual inline unsigned int write_bytes() {
+    return 0;
+  }
+  const GenericLogEntry* get_log_entry() override {
+    return get_sync_point_log_entry();
+  }
+  const SyncPointLogEntry* get_sync_point_log_entry() override {
+    return this;
+  }
   std::ostream& format(std::ostream &os) const;
   friend std::ostream &operator<<(std::ostream &os,
                                   const SyncPointLogEntry &entry);
@@ -91,10 +103,18 @@ public:
     /* The bytes in the image this op makes dirty. Discard and WS override. */
     return write_bytes();
   };
-  const BlockExtent block_extent() { return ram_entry.block_extent(); }
-  const GenericLogEntry* get_log_entry() override { return get_gen_write_log_entry(); }
-  const GeneralWriteLogEntry* get_gen_write_log_entry() override { return this; }
-  uint32_t get_map_ref() { return(referring_map_entries); }
+  const BlockExtent block_extent() {
+    return ram_entry.block_extent();
+  }
+  const GenericLogEntry* get_log_entry() override {
+    return get_gen_write_log_entry();
+  }
+  const GeneralWriteLogEntry* get_gen_write_log_entry() override {
+    return this;
+  }
+  uint32_t get_map_ref() {
+    return(referring_map_entries);
+  }
   void inc_map_ref() { referring_map_entries++; }
   void dec_map_ref() { referring_map_entries--; }
   std::ostream &format(std::ostream &os) const;
@@ -132,8 +152,12 @@ public:
   buffer::list &get_pmem_bl(ceph::mutex &entry_bl_lock);
   /* Constructs a new bl containing copies of pmem_bp */
   void copy_pmem_bl(ceph::mutex &entry_bl_lock, bufferlist *out_bl);
-  virtual const GenericLogEntry* get_log_entry() override { return get_write_log_entry(); }
-  const WriteLogEntry* get_write_log_entry() override { return this; }
+  virtual const GenericLogEntry* get_log_entry() override {
+    return get_write_log_entry();
+  }
+  const WriteLogEntry* get_write_log_entry() override {
+    return this;
+  }
   std::ostream &format(std::ostream &os) const;
   friend std::ostream &operator<<(std::ostream &os,
                                   const WriteLogEntry &entry);
