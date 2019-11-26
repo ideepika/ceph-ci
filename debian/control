@@ -252,7 +252,7 @@ Depends: ceph-mgr (= ${binary:Version}),
          ${misc:Depends},
          ${python:Depends},
          ${shlibs:Depends},
-Description: dashboard plugin for ceph-mgr
+Description: dashboard module for ceph-mgr
  Ceph is a massively scalable, open-source, distributed
  storage system that runs on commodity hardware and delivers object,
  block and file system storage.

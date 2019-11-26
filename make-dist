@@ -152,11 +152,14 @@ download_boost $boost_version 2684c972994ee57fc5632e03bf044746f6eb45d4920c343937
                https://downloads.sourceforge.net/project/boost/boost/$boost_version \
                https://download.ceph.com/qa
 
-build_dashboard_frontend
 tar --concatenate -f $outfile.all.tar $outfile.version.tar
 tar --concatenate -f $outfile.all.tar $outfile.boost.tar
 tar --concatenate -f $outfile.all.tar $outfile.tar
-tar --concatenate -f $outfile.all.tar dashboard_frontend.tar
+if [ ${WITH_MGR_DASHBOARD_FRONTEND:-OFF} == "OFF" ]; then
+    build_dashboard_frontend
+    tar --concatenate -f $outfile.all.tar dashboard_frontend.tar
+    rm -f dashboard_frontend.tar
+fi
 mv $outfile.all.tar $outfile.tar
 rm $outfile
 rm -f $outfile.version.tar

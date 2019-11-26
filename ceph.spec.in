@@ -79,6 +79,7 @@
 # distros that do _not_ ship cmd2/colorama
 %bcond_with cephfs_shell
 %endif
+%bcond_with dashboard_frontend
 %if 0%{without python2}
 %global _defined_if_python2_absent 1
 %endif
@@ -526,7 +527,7 @@ Requires:       pyOpenSSL
 Requires:       python%{_python_buildid}-pyOpenSSL
 %endif
 %description mgr-dashboard
-ceph-mgr-dashboard is a manager plugin, providing a web-based application
+ceph-mgr-dashboard is a manager module, providing a web-based application
 to monitor and manage many aspects of a Ceph cluster and related components.
 See the Dashboard documentation at http://docs.ceph.com/ for details and a
 detailed feature overview.
@@ -1263,7 +1264,11 @@ ${CMAKE} .. \
     -DCMAKE_INSTALL_INCLUDEDIR=%{_includedir} \
     -DWITH_MANPAGE=ON \
     -DWITH_PYTHON3=%{python3_version} \
+%if %{with dashboard_frontend}
+    -DWITH_MGR_DASHBOARD_FRONTEND=ON \
+%else
     -DWITH_MGR_DASHBOARD_FRONTEND=OFF \
+%endif
 %if %{with python2}
     -DWITH_PYTHON2=ON \
 %else
