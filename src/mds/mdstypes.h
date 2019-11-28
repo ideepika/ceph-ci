@@ -221,10 +221,10 @@ std::ostream& operator<<(std::ostream &out, const frag_info_t &f);
 struct nest_info_t : public scatter_info_t {
   // this frag + children
   utime_t rctime;
+  utime_t dirty_from;
   int64_t rbytes = 0;
   int64_t rfiles = 0;
   int64_t rsubdirs = 0;
-  int64_t rsize() const { return rfiles + rsubdirs; }
 
   int64_t rsnaps = 0;
 
@@ -234,12 +234,25 @@ struct nest_info_t : public scatter_info_t {
     *this = nest_info_t();
   }
 
+  void update_dirty_from(const utime_t& now) {
+    if (dirty_from.is_zero() || dirty_from > now)
+      dirty_from = now;
+  }
+  void update_rctime(const utime_t& ctime, const utime_t& now) {
+    if (ctime > rctime)
+      rctime = ctime;
+    update_dirty_from(now);
+  }
+
   void sub(const nest_info_t &other) {
     add(other, -1);
   }
   void add(const nest_info_t &other, int fac=1) {
     if (other.rctime > rctime)
       rctime = other.rctime;
+    if (fac == 1 && !other.dirty_from.is_zero())
+      update_dirty_from(other.dirty_from);
+
     rbytes += fac*other.rbytes;
     rfiles += fac*other.rfiles;
     rsubdirs += fac*other.rsubdirs;
@@ -255,6 +268,8 @@ struct nest_info_t : public scatter_info_t {
     rsubdirs += cur.rsubdirs - acc.rsubdirs;
     rsnaps += cur.rsnaps - acc.rsnaps;
   }
+
+  int64_t rsize() const { return rfiles + rsubdirs; }
 
   bool same_sums(const nest_info_t &o) const {
     return rctime <= o.rctime &&
