@@ -482,8 +482,8 @@ class Module(MgrModule):
                pool_stat['stat_sum']['num_bytes'] <= (1 << 30): # 1 GiB
                 # FIXME: make plan accept ids directly instead
                 pool_name = self.get_pool_name(osdmap, pool_stat['poolid'])
-                assert pool_name is not None
-                empty_pools.append(pool_name)
+                if pool_name:
+                    empty_pools.append(pool_name)
 
         if len(empty_pools) == 0:
              return
