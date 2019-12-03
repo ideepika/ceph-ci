@@ -2324,6 +2324,7 @@ void MDCache::predirty_journal_parents(MutationRef mut, EMetaBlob *blob,
 
     pf->rstat.dirty_from = utime_t();
     pf->accounted_rstat = pf->rstat;
+    parent->clear_dirty_rstat();
 
     if (parent->get_frag() == frag_t()) { // i.e., we are the only frag
       if (pi.inode.rstat.rbytes != pf->rstat.rbytes) {
@@ -3823,6 +3824,7 @@ void MDCache::recalc_auth_bits(bool replay)
 	  dir->state_clear(CDir::STATE_COMPLETE);
 	  if (dir->is_dirty())
 	    dir->mark_clean();
+	  dir->clear_dirty_rstat();
 	}
       }
 

@@ -222,8 +222,8 @@ void StrayManager::_purge_stray_purged(
     else
       pf->fragstat.nfiles--;
     pf->rstat.sub(in->inode.accounted_rstat);
-    utime_t now = ceph_clock_now();
-    pf->rstat.update_rctime(now, now);
+    pf->rstat.update_rctime(ceph_clock_now(),
+			    utime_t(std::numeric_limits<time_t>::max(), 0));
 
     le->metablob.add_dir_context(dn->dir);
     EMetaBlob::dirlump& dl = le->metablob.add_dir(dn->dir, true);

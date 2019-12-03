@@ -8296,12 +8296,13 @@ void Server::_rename_prepare(MDRequestRef& mdr,
   }
   
   // move srcdn
-  int predirty_primary = (srcdnl->is_primary() && srcdn->get_dir() != destdn->get_dir()) ? PREDIRTY_PRIMARY:0;
-  int flags = predirty_dir | predirty_primary;
+  int predirty_flags = predirty_dir | (srcdnl->is_primary() ? PREDIRTY_PRIMARY : 0);
+  int unlink_from_srcdir = srcdn->get_dir() == destdn->get_dir() ? 0 : -1;
   if (srcdn->is_auth())
-    mdcache->predirty_journal_parents(mdr, metablob, srci, srcdn->get_dir(), PREDIRTY_SHALLOW|flags, -1);
-  if (destdn->is_auth())
-    mdcache->predirty_journal_parents(mdr, metablob, srci, destdn->get_dir(), flags, 1);
+    mdcache->predirty_journal_parents(mdr, metablob, srci, srcdn->get_dir(),
+				      predirty_flags, unlink_from_srcdir);
+  if (unlink_from_srcdir && destdn->is_auth())
+    mdcache->predirty_journal_parents(mdr, metablob, srci, destdn->get_dir(), predirty_flags, 1);
 
   // add it all to the metablob
   // target inode
@@ -8346,6 +8347,8 @@ void Server::_rename_prepare(MDRequestRef& mdr,
 	mdcache->journal_cow_dentry(mdr.get(), metablob, oldin->get_projected_parent_dn(),
 				    CEPH_NOSNAP, 0, destdnl);
 	metablob->add_primary_dentry(oldin->get_projected_parent_dn(), oldin, true);
+	if (!silent)
+	  oldin->mark_dirty_rstat();
       }
     }
   }
@@ -8378,6 +8381,8 @@ void Server::_rename_prepare(MDRequestRef& mdr,
       metablob->add_dir_context(srci_pdn->get_dir());
       mdcache->journal_cow_dentry(mdr.get(), metablob, srci_pdn, CEPH_NOSNAP, 0, srcdnl);
       metablob->add_primary_dentry(srci_pdn, srci, true);
+      if (!silent)
+	srci->mark_dirty_rstat();
     }
   } else if (srcdnl->is_primary()) {
     // project snap parent update?

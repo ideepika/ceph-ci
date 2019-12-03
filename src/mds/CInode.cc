@@ -396,11 +396,9 @@ void CInode::mark_dirty_rstat()
     dout(10) << __func__ << dendl;
     state_set(STATE_DIRTYRSTAT);
     get(PIN_DIRTYRSTAT);
-    CDentry *pdn = get_projected_parent_dn();
-    if (pdn->is_auth()) {
-      CDir *pdir = pdn->dir;
-      pdir->dirty_rstat_inodes.push_back(&dirty_rstat_item);
-      mdcache->mds->locker->mark_updated_scatterlock(&pdir->inode->nestlock);
+    CDir *pdir = get_projected_parent_dir();
+    if (pdir->is_auth()) {
+      pdir->add_dirty_rstat_inode(this);
     } else {
       // under cross-MDS rename.
       // DIRTYRSTAT flag will get cleared when rename finishes
@@ -408,13 +406,15 @@ void CInode::mark_dirty_rstat()
     }
   }
 }
+
 void CInode::clear_dirty_rstat()
 {
   if (state_test(STATE_DIRTYRSTAT)) {
     dout(10) << __func__ << dendl;
     state_clear(STATE_DIRTYRSTAT);
     put(PIN_DIRTYRSTAT);
-    dirty_rstat_item.remove_myself();
+    CDir *pdir = get_projected_parent_dir();
+    pdir->remove_dirty_rstat_inode(this);
   }
 }
 
@@ -841,6 +841,7 @@ void CInode::close_dirfrag(frag_t fg)
   // clear dirty flag
   if (dir->is_dirty())
     dir->mark_clean();
+  dir->clear_dirty_rstat();
   
   if (stickydir_ref > 0) {
     dir->state_clear(CDir::STATE_STICKY);
@@ -2278,13 +2279,14 @@ void CInode::finish_scatter_update(ScatterLock *lock, CDir *dir,
 	pf->rstat.version = pi->rstat.version;
 	pf->rstat.dirty_from = utime_t();
 	pf->accounted_rstat = pf->rstat;
+	dir->clear_dirty_rstat();
 	ename = "lock inest accounted scatter stat update";
 
 	if (!is_auth() && lock->get_state() == LOCK_MIX) {
-	  dout(10) << __func__ << " try to assimilate dirty rstat on " 
-	    << *dir << dendl; 
+	  dout(10) << __func__ << " try to assimilate dirty rstat on "
+		   << *dir << dendl;
 	  dir->assimilate_dirty_rstat_inodes();
-       }
+	}
 
 	break;
       default:
@@ -2308,14 +2310,11 @@ void CInode::finish_scatter_update(ScatterLock *lock, CDir *dir,
           << *dir << dendl; 
         dir->assimilate_dirty_rstat_inodes_finish(mut, &le->metablob);
 
-        if (!(pf->rstat == pf->accounted_rstat)) {
-          if (!mut->is_wrlocked(&nestlock)) {
-            mdcache->mds->locker->wrlock_force(&nestlock, mut);
-          }
-
-          mdcache->mds->locker->mark_updated_scatterlock(&nestlock);
-          mut->ls->dirty_dirfrag_nest.push_back(&item_dirty_dirfrag_nest);
-        }
+	if (!(pf->rstat == pf->accounted_rstat)) {
+	  if (!mut->is_wrlocked(&nestlock))
+	    mdcache->mds->locker->wrlock_force(&nestlock, mut);
+	  dir->mark_dirty_rstat(mut->ls);
+	}
       }
       
       mdlog->submit_entry(le, new C_Inode_FragUpdate(this, dir, mut));
@@ -2525,10 +2524,11 @@ void CInode::finish_scatter_gather_update(int type)
 	  dout(20) << fg << " skipping STALE accounted_rstat " << pf->accounted_rstat << dendl;
 	}
 	if (update) {
+	  pf->rstat.version = pi->rstat.version;
 	  pf->rstat.dirty_from = utime_t();
 	  pf->accounted_rstat = pf->rstat;
 	  dir->dirty_old_rstat.clear();
-	  pf->rstat.version = pf->accounted_rstat.version = pi->rstat.version;
+	  dir->clear_dirty_rstat();
 	  dir->check_rstats();
 	  dout(10) << fg << " updated accounted_rstat " << pf->rstat << " on " << *dir << dendl;
 	}
