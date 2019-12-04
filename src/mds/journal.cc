@@ -1176,15 +1176,13 @@ void EMetaBlob::replay(MDSRank *mds, LogSegment *logseg, MDSlaveUpdate *slaveup)
 
       if (!(dir->fnode.rstat == dir->fnode.accounted_rstat)) {
 	dout(10) << "EMetaBlob.replay      dirty nestinfo on " << *dir << dendl;
-	mds->locker->mark_updated_scatterlock(&dir->inode->nestlock);
-	logseg->dirty_dirfrag_nest.push_back(&dir->inode->item_dirty_dirfrag_nest);
+	dir->mark_dirty_rstat(logseg);
       } else {
 	dout(10) << "EMetaBlob.replay      clean nestinfo on " << *dir << dendl;
       }
       if (!(dir->fnode.fragstat == dir->fnode.accounted_fragstat)) {
 	dout(10) << "EMetaBlob.replay      dirty fragstat on " << *dir << dendl;
-	mds->locker->mark_updated_scatterlock(&dir->inode->filelock);
-	logseg->dirty_dirfrag_dir.push_back(&dir->inode->item_dirty_dirfrag_dir);
+	dir->mark_dirty_fragstat(logseg);
       } else {
 	dout(10) << "EMetaBlob.replay      clean fragstat on " << *dir << dendl;
       }

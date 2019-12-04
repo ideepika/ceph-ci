@@ -2233,12 +2233,10 @@ void MDCache::predirty_journal_parents(MutationRef mut, EMetaBlob *blob,
     }
     if (stop) {
       dout(10) << "predirty_journal_parents stop.  marking nestlock on " << *pin << dendl;
-      mds->locker->mark_updated_scatterlock(&pin->nestlock);
-      mut->ls->dirty_dirfrag_nest.push_back(&pin->item_dirty_dirfrag_nest);
+      parent->mark_dirty_rstat(mut->ls);
       mut->add_updated_lock(&pin->nestlock);
       if (do_parent_mtime || linkunlink) {
-	mds->locker->mark_updated_scatterlock(&pin->filelock);
-	mut->ls->dirty_dirfrag_dir.push_back(&pin->item_dirty_dirfrag_dir);
+	parent->mark_dirty_fragstat(mut->ls);
 	mut->add_updated_lock(&pin->filelock);
       }
       break;
@@ -12165,13 +12163,11 @@ void MDCache::rollback_uncommitted_fragments()
 
 	if (!(dir->fnode.rstat == dir->fnode.accounted_rstat)) {
 	  dout(10) << "    dirty nestinfo on " << *dir << dendl;
-	  mds->locker->mark_updated_scatterlock(&dir->inode->nestlock);
-	  ls->dirty_dirfrag_nest.push_back(&dir->inode->item_dirty_dirfrag_nest);
+	  dir->mark_dirty_rstat(ls);
 	}
 	if (!(dir->fnode.fragstat == dir->fnode.accounted_fragstat)) {
 	  dout(10) << "    dirty fragstat on " << *dir << dendl;
-	  mds->locker->mark_updated_scatterlock(&dir->inode->filelock);
-	  ls->dirty_dirfrag_dir.push_back(&dir->inode->item_dirty_dirfrag_dir);
+	  dir->mark_dirty_fragstat(ls);
 	}
 
 	le->add_orig_frag(dir->get_frag());
@@ -12848,8 +12844,7 @@ void MDCache::repair_dirfrag_stats_work(MDRequestRef& mdr)
     if (pf->fragstat.change_attr > frag_info.change_attr)
       frag_info.change_attr = pf->fragstat.change_attr;
     pf->fragstat = frag_info;
-    mds->locker->mark_updated_scatterlock(&diri->filelock);
-    mdr->ls->dirty_dirfrag_dir.push_back(&diri->item_dirty_dirfrag_dir);
+    dir->mark_dirty_fragstat(mdr->ls);
     mdr->add_updated_lock(&diri->filelock);
   }
 
@@ -12857,8 +12852,7 @@ void MDCache::repair_dirfrag_stats_work(MDRequestRef& mdr)
     if (pf->rstat.rctime > nest_info.rctime)
       nest_info.rctime = pf->rstat.rctime;
     pf->rstat = nest_info;
-    mds->locker->mark_updated_scatterlock(&diri->nestlock);
-    mdr->ls->dirty_dirfrag_nest.push_back(&diri->item_dirty_dirfrag_nest);
+    dir->mark_dirty_rstat(mdr->ls);
     mdr->add_updated_lock(&diri->nestlock);
   }
 
