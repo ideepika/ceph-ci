@@ -1187,6 +1187,7 @@ bool MDSRank::handle_deferrable_message(const cref_t<Message> &m)
 
     case MSG_MDS_LOCK:
     case MSG_MDS_INODEFILECAPS:
+    case MSG_MDS_RSTATS:
       ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
       locker->dispatch(m);
       break;

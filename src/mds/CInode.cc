@@ -2276,6 +2276,9 @@ void CInode::finish_scatter_update(ScatterLock *lock, CDir *dir,
 	ename = "lock ifile accounted scatter stat update";
 	break;
       case CEPH_LOCK_INEST:
+	if (!is_auth() && !pf->rstat.dirty_from.is_zero())
+	  mdcache->mds->locker->update_rstat_remote_gathered(pf->rstat.dirty_from);
+
 	pf->rstat.version = pi->rstat.version;
 	pf->rstat.dirty_from = utime_t();
 	pf->accounted_rstat = pf->rstat;

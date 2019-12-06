@@ -178,6 +178,7 @@
 //#include "messages/MInodeUpdate.h"
 #include "messages/MCacheExpire.h"
 #include "messages/MInodeFileCaps.h"
+#include "messages/MMDSRstats.h"
 
 #include "messages/MMgrBeacon.h"
 #include "messages/MMgrMap.h"
@@ -825,6 +826,10 @@ Message *decode_message(CephContext *cct,
 
   case MSG_MDS_LOCK:
     m = make_message<MLock>();
+    break;
+
+  case MSG_MDS_RSTATS:
+    m = make_message<MMDSRstats>();
     break;
 
   case MSG_MGR_BEACON:
