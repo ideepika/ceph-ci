@@ -717,9 +717,6 @@ void MDSRankDispatcher::tick()
   // messages to progress.
   progress_thread.signal();
 
-  // make sure mds log flushes, trims periodically
-  mdlog->flush();
-
   // update average session uptime
   sessionmap.update_average_session_age();
 
@@ -733,6 +730,9 @@ void MDSRankDispatcher::tick()
     server->evict_cap_revoke_non_responders();
     locker->tick();
   }
+
+  // make sure mds log flushes, trims periodically
+  mdlog->flush();
 
   // log
   if (logger) {
