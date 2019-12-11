@@ -617,7 +617,41 @@ TEST_F(OSDMapTest, CleanPGUpmaps) {
     ASSERT_TRUE(parent_0 != parent_1);
   }
 
- {
+  {
+    // generate an oversized pg_upmap and apply
+    vector<int32_t> new_pg_upmap = {0, 2, 4};
+    OSDMap::Incremental pending_inc(osdmap.get_epoch() + 1);
+    pending_inc.new_pg_upmap[pgid] = mempool::osdmap::vector<int32_t>(
+      new_pg_upmap.begin(), new_pg_upmap.end());
+    osdmap.apply_incremental(pending_inc);
+    ASSERT_TRUE(osdmap.have_pg_upmaps(pgid));
+    osdmap.pg_to_raw_up(pgid, &up, &up_primary);
+    ASSERT_TRUE(up.size() == 3);
+    ASSERT_TRUE(std::find(up.begin(), up.end(), 0) != up.end());
+    ASSERT_TRUE(std::find(up.begin(), up.end(), 2) != up.end());
+    ASSERT_TRUE(std::find(up.begin(), up.end(), 4) != up.end());
+    // apply fix
+    OSDMap::Incremental new_pending_inc(osdmap.get_epoch() + 1);
+    clean_pg_upmaps(g_ceph_context, osdmap, new_pending_inc);
+    osdmap.apply_incremental(new_pending_inc);
+    ASSERT_TRUE(!osdmap.have_pg_upmaps(pgid));
+  }
+
+  {
+    // generate a negative pg_upmap and apply
+    vector<int32_t> new_pg_upmap = {0, -1};
+    OSDMap::Incremental pending_inc(osdmap.get_epoch() + 1);
+    pending_inc.new_pg_upmap[pgid] = mempool::osdmap::vector<int32_t>(
+      new_pg_upmap.begin(), new_pg_upmap.end());
+    osdmap.apply_incremental(pending_inc);
+    ASSERT_TRUE(osdmap.have_pg_upmaps(pgid));
+    OSDMap::Incremental new_pending_inc(osdmap.get_epoch() + 1);
+    clean_pg_upmaps(g_ceph_context, osdmap, new_pending_inc);
+    osdmap.apply_incremental(new_pending_inc);
+    ASSERT_TRUE(!osdmap.have_pg_upmaps(pgid));
+  }
+
+  {
     // cancel stale upmaps
     osdmap.pg_to_raw_up(pgid, &up, &up_primary);
     int from = -1;

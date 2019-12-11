@@ -1690,13 +1690,32 @@ bool OSDMap::check_pg_upmaps(
     // okay, upmap is valid
     // continue to check if it is still necessary
     auto i = pg_upmap.find(pg);
-    if (i != pg_upmap.end() && vectors_equal(raw, i->second)) {
-      ldout(cct, 10) << " removing redundant pg_upmap "
-                     << i->first << " " << i->second
-                     << dendl;
-      to_cancel->push_back(pg);
-      continue;
+    if (i != pg_upmap.end()) {
+      if (vectors_equal(raw, i->second)) {
+        ldout(cct, 10) << " removing redundant pg_upmap "
+                       << i->first << " " << i->second
+                       << dendl;
+        to_cancel->push_back(pg);
+      } else if ((size_t)get_pg_pool_size(pg) != i->second.size()) {
+        ldout(cct, 10) << " removing size-mismatched pg_upmap "
+                       << i->first << " " << i->second
+                       << dendl;
+        to_cancel->push_back(pg);
+      } else {
+        for (auto osd : i->second) {
+          if (!exists(osd) || (is_down(osd) && is_out(osd))) {
+            ldout(cct, 10) << " removing invalid pg_upmap "
+                           << i->first << " " << i->second
+                           << " as osd." << osd << " not exist/down&out"
+                           << dendl;
+            to_cancel->push_back(pg);
+            break;
+          }
+        }
+      }
     }
+    if (!to_cancel->empty() && to_cancel->back() == pg)
+      continue;
     auto j = pg_upmap_items.find(pg);
     if (j != pg_upmap_items.end()) {
       mempool::osdmap::vector<pair<int,int>> newmap;
