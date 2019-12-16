@@ -1461,6 +1461,7 @@ def read_ceph_conf(shell, config_file):
         shell.exit_code = e.get_error_code()
 
 if __name__ == '__main__':
+    exe_and_quit = False
     config_file = ''
 
     exe = sys.argv[0]
@@ -1473,8 +1474,14 @@ if __name__ == '__main__':
     main_parser.add_argument('-t', '--test', action='store',
                              help='Test against transcript(s) in FILE',
                              nargs='+')
-    main_parser.add_argument('commands', nargs='*',
-                             help='comma delimited commands', default=[])
+    main_parser.add_argument(
+        'commands',
+        nargs='*',
+        help='Comma delimited commands. The shell executes the given command '
+             'and quits immediately with the return value of command. In '
+             'case no commands are provided, the shell is launched.',
+        default=[]
+    )
     args = main_parser.parse_args()
     if args.config:
         config_file = args.config
@@ -1485,6 +1492,8 @@ if __name__ == '__main__':
             args.commands = ['run_script ' +  args.batch, ',quit']
     if args.test:
         args.commands.extend(['-t,'] + [arg + ',' for arg in args.test])
+    if not args.batch and len(args.commands) > 0:
+        exe_and_quit = True
 
     sys.argv.clear()
     sys.argv.append(exe)
@@ -1494,6 +1503,15 @@ if __name__ == '__main__':
     shell = CephFSShell()
     shell.exit_code = 0
     read_ceph_conf(shell, config_file)
-    shell.exit_code = shell.cmdloop()
 
-    sys.exit(shell.exit_code)
+    if exe_and_quit:
+        args_to_shellcmd = args.commands[0]
+        if len(args.commands) > 1:
+            for t in args.commands[1:]:
+                args_to_shellcmd += ' ' + t
+
+        shell.onecmd(args_to_shellcmd)
+    else:
+        retval = shell.cmdloop()
+
+    sys.exit(retval)
