@@ -819,7 +819,7 @@ class Module(MgrModule):
         inc = plan.inc
         total_did = 0
         left = max_optimizations
-        osdmap_dump = self.get_osdmap().dump()
+        osdmap_dump = ms.osdmap_dump
         crush_rule_by_pool_name = dict((p['pool_name'], p['crush_rule']) for p in osdmap_dump.get('pools', []))
         pools_by_crush_rule = {} # group pools by crush_rule
         for pool in pools:
@@ -844,7 +844,7 @@ class Module(MgrModule):
             # since scrubbing activities have significant impacts on performance
             pool_ids = list(p['pool'] for p in pool_dump if p['pool_name'] in it)
             num_pg_active_clean = 0
-            pg_dump = self.get('pg_dump')
+            pg_dump = ms.pg_dump
             for p in pg_dump['pg_stats']:
                 pg_pool = p['pgid'].split('.')[0]
                 if len(pool_ids) and int(pg_pool) not in pool_ids:
