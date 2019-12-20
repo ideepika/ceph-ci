@@ -2490,6 +2490,8 @@ void PGMap::print_summary(ceph::Formatter *f, ostream *out) const
     }
     f->close_section();
   }
+  if (f)
+    dump_pool_stats(f);
   PGMapDigest::print_summary(f, out);
 }
 
