@@ -35,7 +35,8 @@ def str_to_bool(val):
 class TestCephFSShell(CephFSTestCase):
     CLIENTS_REQUIRED = 1
 
-    def run_cephfs_shell_cmd(self, cmd, mount_x=None, opts=None, stdin=None, config_path=None):
+    def run_cephfs_shell_cmd(self, cmd, mount_x=None, opts=None, stdin=None,
+                             config_path=None):
         if mount_x is None:
             mount_x = self.mount_a
         if config_path is None:
@@ -815,6 +816,130 @@ class TestMisc(TestCephFSShell):
             assert re_search(dirname, output) != None, "\n" + \
                    "expected_output -\n{}\ndu_output -\n{}\n".format(
                    dirname, output)
+
+    def test_every_shell_cmd_at_invocation(self):
+        """
+        Runs every test in this suite with
+        ``cephfs-shell -c ceph.conf <cephfs-shell-command>``
+        instead of ``cephfs-shell -c ceph.conf -- <cephfs-shell-command>``
+        """
+        from sys import stdout as sys_stdout
+        from sys import modules as sys_modules
+        from inspect import isclass as inspect_isclass
+        from inspect import ismethod as inspect_ismethod
+        from inspect import getmembers as inspect_getmembers
+        from traceback import print_exc as traceback_print_exc
+
+        def fake_run_cephfs_shell_cmd(cmd, mount_x=None, opts=None,
+                                      config_path=None, stdin=None):
+            if mount_x is None:
+                mount_x = self.mount_a
+            if config_path is None:
+                config_path = self.mount_a.config_path
+
+            cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
+
+            args = ["cephfs-shell", "-c", self.mount_a.config_path]
+
+            if opts is not None:
+                args.extend(opts)
+
+            args.append(cmd)
+
+            log.info("Running command: {}".format(" ".join(args)))
+            return mount_x.client_remote.run(args=args, stdout=StringIO(),
+                                             stderr=StringIO(), stdin=stdin)
+
+        def fake_get_cephfs_shell_cmd_output(cmd, mount_x=None, opts=None,
+                                        stdin=None, config_path=None):
+            return fake_run_cephfs_shell_cmd(cmd=cmd, mount_x=mount_x,
+                                             opts=opts, stdin=stdin,
+                                             config_path=config_path).\
+                stdout.getvalue().strip()
+
+        def fake_get_cephfs_shell_cmd_error(cmd, mount_x=None, opts=None,
+                                            stdin=None, config_path=None):
+            return fake_run_cephfs_shell_cmd(cmd=cmd, mount_x=mount_x,
+                                             opts=opts, stdin=stdin,
+                                             config_path=config_path).\
+                stderr.getvalue().strip()
+
+        def discover_classes_and_run_tests():
+            unreqd_classes = ['CephFSTestCase', 'TestCephFSShell', 'TestMisc',
+                              'StringIO']
+            for class_tuple in inspect_getmembers(sys_modules[__name__],
+                                                  inspect_isclass):
+                if class_tuple[0] in unreqd_classes:
+                    continue
+
+                # NOTE: for debugging
+                #if class_tuple[0] != 'TestGetAndPut':
+                #    continue
+
+                log.info('Running tests from class ' + class_tuple[0] + ' '+\
+                         'now...')
+                if not discover_and_run_tests(class_tuple):
+                    return False
+                log.info('Completed running ' + class_tuple[0])
+
+            return True
+
+        def discover_and_run_tests(class_tuple):
+            test_count, tests_execd_count = (0, 0)
+
+            for method_tuple in inspect_getmembers(class_tuple[1],
+                                                   inspect_ismethod):
+                if method_tuple[0].find('test_') == -1:
+                    continue
+                elif method_tuple[0].find('test_') != 0:
+                    continue
+
+                # NOTE: for debugging
+                #if method_tuple[0] != 'test_get_to_console':
+                #    continue
+
+                test_count += 1
+                obj = class_tuple[1](methodName=method_tuple[0])
+                # XXX: with out this, this test is useless!
+                obj.run_cephfs_shell_cmd = fake_run_cephfs_shell_cmd
+                obj.get_cephfs_shell_cmd_output = \
+                    fake_get_cephfs_shell_cmd_output
+                obj.get_cephfs_shell_cmd_error = \
+                    fake_get_cephfs_shell_cmd_error
+
+                obj.mount_a = self.mount_a
+                obj.mount_b = self.mount_b
+                obj.fs = self.fs
+                obj.mounts = self.mounts
+                obj.mds_cluster = self.mds_cluster
+                obj.mgr_cluster = self.mgr_cluster
+                obj.mon_manager = self.mon_manager
+
+                # execute test method.
+                log.info('Running test ' + method_tuple[0] + 'now...')
+                try:
+                    self.setUp()
+                    # this line runs the test method.
+                    self.assertIsNot(method_tuple[1](obj), False)
+                    self.tearDown()
+                except AssertionError as e:
+                    print('\n' + '=' * 78)
+                    print('Error occurred in test %s.%s' % (class_tuple,
+                          method_tuple))
+                    traceback_print_exc(file=sys_stdout)
+                    print('=' * 78 + '\n')
+                    return False
+
+                log.info('Completed running test ' + method_tuple[0])
+                tests_execd_count += 1
+
+            return True if test_count == tests_execd_count else False
+
+        # NOTE: this method begins executing here.
+        self.assertTrue(discover_classes_and_run_tests())
+        log.info('=' * 76)
+        log.info('test_every_shell_cmd_at_invocation was successful')
+        log.info('=' * 76)
 
     def test_help(self):
         """
