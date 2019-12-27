@@ -305,7 +305,7 @@ int Inode::caps_file_wanted()
 int Inode::caps_wanted()
 {
   int want = caps_file_wanted() | caps_used();
-  if (want & CEPH_CAP_FILE_BUFFER)
+  if (is_file() && (want & CEPH_CAP_FILE_BUFFER))
     want |= CEPH_CAP_FILE_EXCL;
   return want;
 }
