@@ -126,7 +126,8 @@ describe('UserFormComponent', () => {
         email: 'user0@email.com',
         roles: ['administrator'],
         enabled: true,
-        pwdExpirationDate: undefined
+        pwdExpirationDate: undefined,
+        pwdUpdateRequired: true
       };
       formHelper.setMultipleValues(user);
       formHelper.setValue('confirmpassword', user.password);
@@ -147,7 +148,8 @@ describe('UserFormComponent', () => {
       email: 'user1@email.com',
       roles: ['administrator'],
       enabled: true,
-      pwdExpirationDate: undefined
+      pwdExpirationDate: undefined,
+      pwdUpdateRequired: true
     };
     const roles = [
       {
@@ -244,6 +246,7 @@ describe('UserFormComponent', () => {
       expect(userReq.request.body).toEqual({
         username: 'user1',
         password: '',
+        pwdUpdateRequired: true,
         name: 'User 1',
         email: 'user1@email.com',
         roles: ['administrator'],
