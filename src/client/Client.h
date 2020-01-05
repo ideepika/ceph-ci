@@ -810,10 +810,9 @@ protected:
 			 InodeRef *ptarget, bool *pcreated,
 			 const UserPerm& perms);
   void encode_cap_releases(MetaRequest *request, mds_rank_t mds);
-  int encode_inode_release(Inode *in, MetaRequest *req,
-			   mds_rank_t mds, int drop,
-			   int unless,int force=0);
-  void encode_dentry_release(Dentry *dn, MetaRequest *req, mds_rank_t mds);
+  int encode_inode_release(Inode *in, MetaRequest *req, mds_rank_t mds,
+			   int drop, int unless, int want=0, bool force=false);
+  void encode_dentry_release(Dentry *dn, MetaRequest *req, mds_rank_t mds, int dir_want);
   mds_rank_t choose_target_mds(MetaRequest *req, Inode** phash_diri=NULL);
   void connect_mds_targets(mds_rank_t mds);
   void send_request(MetaRequest *request, MetaSession *session,

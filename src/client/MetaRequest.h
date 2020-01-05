@@ -35,6 +35,7 @@ public:
   int inode_drop = 0, inode_unless = 0;
   int old_inode_drop = 0, old_inode_unless = 0;
   int other_inode_drop = 0, other_inode_unless = 0;
+  int dentry_dir_want = 0;
   bool dentry_drop_lease = false;
   bool old_dentry_drop_lease = false;
   vector<MClientRequest::Release> cap_releases;

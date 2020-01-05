@@ -1907,9 +1907,8 @@ void Client::put_request(MetaRequest *request)
   }
 }
 
-int Client::encode_inode_release(Inode *in, MetaRequest *req,
-			 mds_rank_t mds, int drop,
-			 int unless, int force)
+int Client::encode_inode_release(Inode *in, MetaRequest *req, mds_rank_t mds,
+				 int drop, int unless, int want, bool force)
 {
   ldout(cct, 20) << __func__ << " enter(in:" << *in << ", req:" << req
 	   << " mds:" << mds << ", drop:" << drop << ", unless:" << unless
@@ -1930,6 +1929,8 @@ int Client::encode_inode_release(Inode *in, MetaRequest *req,
       released = force;
     }
     if (released) {
+      if (want)
+	cap.wanted |= want;
       ceph_mds_request_release rel;
       rel.ino = in->ino;
       rel.cap_id = cap.cap_id;
@@ -1948,14 +1949,16 @@ int Client::encode_inode_release(Inode *in, MetaRequest *req,
   return released;
 }
 
-void Client::encode_dentry_release(Dentry *dn, MetaRequest *req, mds_rank_t mds)
+void Client::encode_dentry_release(Dentry *dn, MetaRequest *req, mds_rank_t mds,
+				   int dir_want)
 {
   ldout(cct, 20) << __func__ << " enter(dn:"
 	   << dn << ")" << dendl;
   int released = 0;
   if (dn->dir)
     released = encode_inode_release(dn->dir->parent_inode, req, mds,
-				    CEPH_CAP_FILE_SHARED, CEPH_CAP_FILE_EXCL, 1);
+				    CEPH_CAP_FILE_SHARED, CEPH_CAP_FILE_EXCL,
+				    dir_want, true);
   if (released && dn->lease_mds == mds) {
     ldout(cct, 25) << "preemptively releasing dn to mds" << dendl;
     auto& rel = req->cap_releases.back();
@@ -1993,10 +1996,10 @@ void Client::encode_cap_releases(MetaRequest *req, mds_rank_t mds)
 			 req->other_inode_unless);
   
   if (req->dentry_drop_lease && req->dentry())
-    encode_dentry_release(req->dentry(), req, mds);
+    encode_dentry_release(req->dentry(), req, mds, req->dentry_dir_want);
   
   if (req->old_dentry_drop_lease && req->old_dentry())
-    encode_dentry_release(req->old_dentry(), req, mds);
+    encode_dentry_release(req->old_dentry(), req, mds, 0);
   ldout(cct, 25) << __func__ << " exit (req: "
 	   << req << ", mds " << mds <<dendl;
 }
@@ -12574,6 +12577,7 @@ int Client::_unlink(Inode *dir, const char *name, const UserPerm& perm)
     goto fail;
   req->set_dentry(de);
   req->dentry_drop_lease = true;
+  req->dentry_dir_want = CEPH_CAP_FILE_EXCL | CEPH_CAP_DIR_UNLINK;
 
   res = _lookup(dir, name, 0, &otherin, perm);
   if (res < 0)
