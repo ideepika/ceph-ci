@@ -75,9 +75,7 @@ def handle_clone_pending(volume_client, volname, index, groupname, subvolname, s
 def bulk_copy(fs_handle, source_path, dst_path, should_cancel):
     """
     bulk copy data from source to destination -- only directories, symlinks
-    and regular files are synced. note that @should_cancel is not used right
-    now but would be required when implementing cancelation for in-progress
-    clone operations.
+    and regular files are synced.
     """
     log.info("copying data from {0} to {1}".format(source_path, dst_path))
     def cptree(src_root_path, dst_root_path):
@@ -111,7 +109,7 @@ def bulk_copy(fs_handle, source_path, dst_path, should_cancel):
                                     raise
                         elif stat.S_ISREG(st.st_mode):
                             log.debug("cptree: (REG) {0}".format(d_full_src))
-                            copy_file(fs_handle, d_full_src, d_full_dst, mo, st.st_uid, st.st_gid)
+                            copy_file(fs_handle, d_full_src, d_full_dst, mo, st.st_uid, st.st_gid, cancel_check=should_cancel)
                         else:
                             log.warn("cptree: (IGNORE) {0}".format(d_full_src))
                     d = fs_handle.readdir(dir_handle)
