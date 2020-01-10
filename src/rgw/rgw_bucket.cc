@@ -57,6 +57,10 @@
 
 #define BUCKET_TAG_TIMEOUT 30
 
+// default number of entries to list with each bucket listing call
+// (use marker to bridge between calls)
+static constexpr size_t listing_max_entries = 1000;
+
 
 /*
  * The tenant_name is always returned on purpose. May be empty, of course.
@@ -1015,7 +1019,6 @@ int RGWBucket::check_object_index(RGWBucketAdminOpState& op_state,
 
   Formatter *formatter = flusher.get_formatter();
   formatter->open_object_section("objects");
-  constexpr uint32_t NUM_ENTRIES = 1000;
   uint16_t attempt = 1;
   while (is_truncated) {
     RGWRados::ent_map_t result;
@@ -1032,9 +1035,9 @@ int RGWBucket::check_object_index(RGWBucketAdminOpState& op_state,
       set_err_msg(err_msg, "ERROR: failed operation r=" + cpp_strerror(-r));
     }
 
-    if (result.size() < NUM_ENTRIES / 8) {
+    if (result.size() < listing_max_entries / 8) {
       ++attempt;
-    } else if (result.size() > NUM_ENTRIES * 7 / 8 && attempt > 1) {
+    } else if (result.size() > listing_max_entries * 7 / 8 && attempt > 1) {
       --attempt;
     }
 

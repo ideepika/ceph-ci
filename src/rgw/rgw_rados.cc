@@ -1818,8 +1818,10 @@ int RGWRados::Bucket::List::list_objects_ordered(
     for (auto eiter = ent_map.begin(); eiter != ent_map.end(); ++eiter) {
       rgw_bucket_dir_entry& entry = eiter->second;
       rgw_obj_index_key index_key = entry.key;
-
       rgw_obj_key obj(index_key);
+
+      ldout(cct, 20) << "RGWRados::Bucket::List::" << __func__ <<
+	" considering entry " << entry.key << dendl;
 
       /* note that parse_raw_oid() here will not set the correct
        * object's instance, as rgw_obj_index_key encodes that
@@ -1834,12 +1836,12 @@ int RGWRados::Bucket::List::list_objects_ordered(
         continue;
       }
 
-      bool check_ns = (obj.ns == params.ns);
+      bool matched_ns = (obj.ns == params.ns);
       if (!params.list_versions && !entry.is_visible()) {
         continue;
       }
 
-      if (params.enforce_ns && !check_ns) {
+      if (params.enforce_ns && !matched_ns) {
         if (!params.ns.empty()) {
           /* we've iterated past the namespace we're searching -- done now */
           truncated = false;
@@ -8228,21 +8230,6 @@ int RGWRados::cls_bucket_list_ordered(RGWBucketInfo& bucket_info,
   if (r < 0) {
     return r;
   }
-
-  auto result_info =
-    [](const map<int, struct rgw_cls_list_ret>& m) -> std::string {
-      std::stringstream out;
-      out << "{ size:" << m.size() << ", entries:[";
-      for (const auto& i : m) {
-	out << " { " << i.first << ", " << i.second.dir.m.size() << " },";
-      }
-      out << "] }";
-      return out.str();
-    };
-
-  ldout(cct, 20) << "RGWRados::" << __func__ <<
-    " CLSRGWIssueBucketList() result=" <<
-    result_info(list_results) << dendl;
 
   // create a list of iterators that are used to iterate each shard
   vector<RGWRados::ent_map_t::iterator> vcurrents;

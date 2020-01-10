@@ -6754,15 +6754,13 @@ next:
     uint16_t attempt = 1;
     while (is_truncated) {
       RGWRados::ent_map_t result;
-      int r =
-	store->getRados()->cls_bucket_list_ordered(
-	  bucket_info, RGW_NO_SHARD,
-	  marker, empty_prefix, empty_delimiter,
-	  NUM_ENTRIES, true, attempt,
-	  result, &is_truncated, &cls_filtered, &marker,
-	  null_yield,
-	  rgw_bucket_object_check_filter);
-
+      int r = store->getRados()->cls_bucket_list_ordered(
+	bucket_info, RGW_NO_SHARD,
+	marker, empty_prefix, empty_delimiter,
+	NUM_ENTRIES, true, attempt,
+	result, &is_truncated, &cls_filtered, &marker,
+	null_yield,
+	rgw_bucket_object_check_filter);
       if (r < 0 && r != -ENOENT) {
         cerr << "ERROR: failed operation r=" << r << std::endl;
       } else if (r == -ENOENT) {
