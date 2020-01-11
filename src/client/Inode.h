@@ -108,12 +108,17 @@ struct CapSnap {
   void dump(Formatter *f) const;
 };
 
+struct AsyncCreateStat {
+  file_layout_t layout;
+};
+
 // inode flags
 #define I_COMPLETE	1
 #define I_DIR_ORDERED	2
 #define I_CAP_DROPPED	4
 #define I_SNAPDIR_OPEN	8
 #define I_KICK_FLUSH	16
+
 
 struct Inode {
   Client *client;
@@ -211,6 +216,8 @@ struct Inode {
   xlist<Inode*>::item snaprealm_item;
   InodeRef snapdir_parent;  // only if we are a snapdir inode
   map<snapid_t,CapSnap> cap_snaps;   // pending flush to mds
+
+  unique_ptr<AsyncCreateStat> async_create_stat;
 
   //int open_by_mode[CEPH_FILE_MODE_NUM];
   map<int,int> open_by_mode;
