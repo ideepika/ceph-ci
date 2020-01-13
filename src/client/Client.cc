@@ -2328,6 +2328,7 @@ void Client::send_request(MetaRequest *request, MetaSession *session,
       r->head.ino = request->target->ino;
   } else {
     if (request->async) {
+      r->set_async_op();
       if (request->target)
 	r->head.ino = request->target->ino;
     }
