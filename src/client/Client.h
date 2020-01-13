@@ -1301,6 +1301,12 @@ private:
   int reclaim_errno = 0;
   epoch_t reclaim_osd_epoch = 0;
   entity_addrvec_t reclaim_target_addrs;
+
+  uint64_t async_dirop_mask = 0;
+  enum {
+    ASYNC_UNLINK = 1,
+    ASYNC_CREATE = 2,
+  };
 };
 
 /**

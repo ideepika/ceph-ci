@@ -284,6 +284,8 @@ Client::Client(Messenger *m, MonClient *mc, Objecter *objecter_)
   if (cct->_conf->client_acl_type == "posix_acl")
     acl_type = POSIX_ACL;
 
+  async_dirop_mask = cct->_conf.get_val<uint64_t>("client_async_dirop_mask");
+
   lru.lru_set_midpoint(cct->_conf->client_cache_mid);
 
   // file handles
@@ -12422,7 +12424,6 @@ int Client::_create(Inode *dir, const char *name, int flags, mode_t mode,
     req->head.args.open.mask = 0;
   req->head.args.open.pool = pool_id;
   req->dentry_drop_lease = true;
-  req->dentry_dir_want = CEPH_CAP_FILE_EXCL | CEPH_CAP_DIR_CREATE;
 
   mode |= S_IFREG;
   bufferlist xattrs_bl;
@@ -12439,7 +12440,10 @@ int Client::_create(Inode *dir, const char *name, int flags, mode_t mode,
     goto fail;
   req->set_dentry(de);
 
-  req->async_dirop_cb = &Client::_async_create_cb;
+  if (async_dirop_mask & ASYNC_CREATE) {
+    req->dentry_dir_want = CEPH_CAP_FILE_EXCL | CEPH_CAP_DIR_CREATE;
+    req->async_dirop_cb = &Client::_async_create_cb;
+  }
 
   res = make_request(req, perms, inp, created);
   if (res < 0) {
@@ -12781,7 +12785,6 @@ int Client::_unlink(Inode *dir, const char *name, const UserPerm& perm)
     goto fail;
   req->set_dentry(de);
   req->dentry_drop_lease = true;
-  req->dentry_dir_want = CEPH_CAP_FILE_EXCL | CEPH_CAP_DIR_UNLINK;
 
   res = _lookup(dir, name, 0, &otherin, perm);
   if (res < 0)
@@ -12793,7 +12796,10 @@ int Client::_unlink(Inode *dir, const char *name, const UserPerm& perm)
   req->other_inode_drop = CEPH_CAP_LINK_SHARED | CEPH_CAP_LINK_EXCL;
   req->set_inode(dir);
 
-  req->async_dirop_cb = &Client::_async_unlink_cb;
+  if (async_dirop_mask & ASYNC_UNLINK) {
+    req->dentry_dir_want = CEPH_CAP_FILE_EXCL | CEPH_CAP_DIR_UNLINK;
+    req->async_dirop_cb = &Client::_async_unlink_cb;
+  }
   res = make_request(req, perm);
 
   trim_cache();
@@ -14834,6 +14840,9 @@ void Client::handle_conf_change(const ConfigProxy& conf,
     acl_type = NO_ACL;
     if (cct->_conf->client_acl_type == "posix_acl")
       acl_type = POSIX_ACL;
+  }
+  if (changed.count("client_async_dirop_mask")) {
+    async_dirop_mask = cct->_conf.get_val<uint64_t>("client_async_dirop_mask");
   }
 }
 
