@@ -298,3 +298,30 @@ class SubvolumeV1(SubvolumeBase, SubvolumeTemplate):
         except (IndexException, MetadataMgrException) as e:
             log.warn("error delining snapshot from clone: {0}".format(e))
             raise VolumeException(-errno.EINVAL, "error delinking snapshot from clone")
+
+    def is_clone_cancelable(self, clone_state):
+        return not (OpSm.is_final_state(clone_state) or OpSm.is_failed_state(clone_state))
+
+    def try_clone_cancel(self, tgt_subvolume, snapname):
+        # if clone has finished (complete, failed or already canceled ), then there
+        # is nothing to cancel. when the state is "pending", cancel can be cut short
+        # since the cloner threads have not yet picked up this clone -- so, simply
+        # untrack the clone and mark it as "canceled". for the final case of a clone
+        # being "in-progress", return the job id to cancel the async job.
+        try:
+            clone_state = tgt_subvolume.state
+            assert self.is_clone_cancelable(clone_state)
+            with open_clone_index(self.fs, self.vol_spec) as index:
+                track_id = index.find_clone_entry_index(tgt_subvolume.base_path)
+            if not track_id:
+                log.warn("cannot lookup clone tracking index for {0}".format(tgt_subvolume.base_path))
+                raise VolumeException(-errno.EINVAL, "error canceling clone")
+            # clone is in progress -- return the job id to cancel async job
+            if not OpSm.is_init_state("clone", clone_state):
+                return (-errno.EINPROGRESS, (track_id, tgt_subvolume.base_path))
+            # clone has not started yet -- cancel right away.
+            next_state = OpSm.get_next_state("clone", clone_state, -errno.EINTR)
+            tgt_subvolume.state = (next_state, True)
+            self.detach_snapshot(snapname, track_id.decode('utf-8'))
+        except (IndexException, MetadataMgrException) as e:
+            raise VolumeException(-errno.EINVAL, "error canceling clone")

@@ -214,9 +214,18 @@ class Cloner(AsyncJobs):
             'pending'     : handle_clone_pending,
             'in-progress' : handle_clone_in_progress,
             'complete'    : handle_clone_complete,
-            'failed'      : handle_clone_failed
+            'failed'      : handle_clone_failed,
+            'canceled'    : handle_clone_failed,
         }
         super(Cloner, self).__init__(volume_client, "cloner", tp_size)
+
+    def cancel_job(self, volname, job):
+        """
+        override base class `cancel_job` to raise exception when job is not found.
+        """
+        with self.lock:
+            if not self._cancel_job(volname, job):
+                raise VolumeException(-errno.EINVAL, "cannot cancel -- clone finished (check clone status)")
 
     def get_next_job(self, volname, running_jobs):
         return get_next_clone_entry(self.vc, volname, running_jobs)
