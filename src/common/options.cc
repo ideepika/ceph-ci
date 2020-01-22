@@ -8347,7 +8347,7 @@ std::vector<Option> get_mds_client_options() {
     .set_description(""),
 
     Option("client_async_dirop_mask", Option::TYPE_UINT, Option::LEVEL_DEV)
-    .set_default(0)
+    .set_default(3)
     .set_description("enable given type of async dir operation. 1: unlink; 2: create"),
 
     Option("client_mds_namespace", Option::TYPE_STR, Option::LEVEL_ADVANCED)
