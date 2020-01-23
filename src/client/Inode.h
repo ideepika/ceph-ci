@@ -217,6 +217,7 @@ struct Inode {
   InodeRef snapdir_parent;  // only if we are a snapdir inode
   map<snapid_t,CapSnap> cap_snaps;   // pending flush to mds
 
+  std::map<std::string, MetaRequest*> async_dirops;
   unique_ptr<AsyncCreateStat> async_create_stat;
 
   //int open_by_mode[CEPH_FILE_MODE_NUM];

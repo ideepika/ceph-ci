@@ -995,7 +995,7 @@ Dentry *Client::insert_dentry_inode(Dir *dir, const string& dname, LeaseStat *dl
 	old_diri->dir_ordered_count++;
 	clear_dir_complete_and_ordered(old_diri, false);
       }
-      unlink(old_dentry, dir == old_dentry->dir, false);  // drop dentry, keep dir open if its the same dir
+      unlink(old_dentry, true, true);  // keep dir, keep dentry
     }
     Inode *diri = dir->parent_inode;
     diri->dir_ordered_count++;
@@ -1674,8 +1674,10 @@ int Client::verify_reply_trace(int r, MetaSession *session,
 
 bool Client::wait_for_async_dirop(MetaRequest *req)
 {
-  bool waited = false;
+  if (!async_dirop_mask)
+    return false;
 
+  bool waited = false;
   Inode *in = nullptr;
   if (req->inode() && (req->inode()->flags & I_ASYNC_CREATING))
     in = req->inode();
@@ -1695,6 +1697,34 @@ bool Client::wait_for_async_dirop(MetaRequest *req)
     wait_on_list(req->waitfor_safe);
     put_request(req);
     waited = true;
+  }
+
+  if (is_dir_operation(req)) {
+    Inode *diri = req->inode();
+    Dentry *dn = req->dentry();
+    MetaRequest *async_req = nullptr;
+
+    auto it = diri->async_dirops.find(dn->name);
+    if (it != diri->async_dirops.end()) {
+      async_req = it->second;
+    } else if (req->old_dentry()) {
+      dn = req->old_dentry();
+      if (dn->dir) {
+	diri = dn->dir->parent_inode;
+	it = diri->async_dirops.find(dn->name);
+	if (it != diri->async_dirops.end())
+	  async_req = it->second;
+      }
+    }
+
+    if (async_req) {
+      ldout(cct, 10) << __func__ << " dentry " << *dn
+		     << " is being async modified, waiting" << dendl;
+      async_req->get();
+      wait_on_list(async_req->waitfor_safe);
+      put_request(async_req);
+      waited = true;
+    }
   }
 
   return waited;
@@ -12261,6 +12291,9 @@ void Client::_async_create_cb(MetaRequest *req, MetaSession *session, int err)
       in->set_async_err(err);
     }
     put_cap_ref(diri, want);
+
+    auto ret = diri->async_dirops.erase(dn->name);
+    ceph_assert(ret);
     in->flags &= ~I_ASYNC_CREATING;
     signal_cond_list(req->waitfor_safe);
     return;
@@ -12341,6 +12374,8 @@ void Client::_async_create_cb(MetaRequest *req, MetaSession *session, int err)
   uint32_t orig_flags = req->head.args.open.flags;
   req->head.args.open.flags = orig_flags | CEPH_O_EXCL;
   register_unsafe_request(req, session);
+  auto ret = diri->async_dirops.emplace(dn->name, req);
+  ceph_assert(ret.second);
   ldout(cct, 10) << __func__ << " succeed" <<  dendl;
 }
 
@@ -12733,6 +12768,10 @@ void Client::_async_unlink_cb(MetaRequest *req, MetaSession *session, int err)
       diri->set_async_err(err);
     }
     put_cap_ref(diri, want);
+
+    auto ret = diri->async_dirops.erase(dn->name);
+    ceph_assert(ret);
+    signal_cond_list(req->waitfor_safe);
     return;
   }
 
@@ -12757,6 +12796,8 @@ void Client::_async_unlink_cb(MetaRequest *req, MetaSession *session, int err)
   req->async = true;
   req->resend_mds = session->mds_num;
   register_unsafe_request(req, session);
+  auto ret = diri->async_dirops.emplace(dn->name, req);
+  ceph_assert(ret.second);
   ldout(cct, 10) << __func__ << " succeed" <<  dendl;
 }
 
