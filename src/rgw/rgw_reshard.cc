@@ -707,8 +707,7 @@ int RGWBucketReshard::execute(int num_shards, int max_op_entries,
   ret = set_resharding_status(new_bucket_info.bucket.bucket_id,
 			      num_shards, CLS_RGW_RESHARD_IN_PROGRESS);
   if (ret < 0) {
-    reshard_lock.unlock();
-    return ret;
+    goto error_out;
   }
 
   ret = do_reshard(num_shards,
@@ -1108,9 +1107,8 @@ int RGWReshard::process_all_logshards()
     ldout(store->ctx(), 20) << "processing logshard = " << logshard << dendl;
 
     ret = process_single_logshard(i);
-    if (ret <0) {
-      return ret;
-    }
+
+    ldout(store->ctx(), 20) << "finish processing logshard = " << logshard << " , ret = " << ret << dendl;
   }
 
   return 0;
