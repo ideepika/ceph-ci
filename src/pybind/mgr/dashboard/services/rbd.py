@@ -101,6 +101,9 @@ class RbdConfiguration(object):
                 with rbd.Image(ioctx, self._image_name) as image:
                     result = image.config_list()
             else:  # pool config
+                pg_status = CephService.get_pool_pg_status(self._pool_name)
+                if 'creating+incomplete' in pg_status:
+                    return []
                 result = self._rbd.config_list(ioctx)
             return list(result)
 
