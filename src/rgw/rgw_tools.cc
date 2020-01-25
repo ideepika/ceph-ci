@@ -2,9 +2,11 @@
 // vim: ts=8 sw=2 smarttab ft=cpp
 
 #include <errno.h>
+#include <fmt/format.h>
 
 #include "common/errno.h"
 #include "common/safe_io.h"
+#include "common/async/waiter.h"
 #include "librados/librados_asio.h"
 #include "common/async/yield_context.h"
 
@@ -25,6 +27,8 @@
 #include "services/svc_sys_obj.h"
 #include "services/svc_zone.h"
 #include "services/svc_zone_utils.h"
+
+namespace ca = ceph::async;
 
 #define dout_subsys ceph_subsys_rgw
 #define dout_context g_ceph_context
@@ -311,6 +315,403 @@ int rgw_rados_notify(librados::IoCtx& ioctx, const std::string& oid,
 #endif
   return ioctx.notify2(oid, bl, timeout_ms, pbl);
 }
+
+// Neorados
+bs::error_code rgw_rados_set_omap_heavy(R::RADOS& r, std::string_view pool,
+					optional_yield y)
+{
+  using namespace std::literals;
+  static constexpr auto pool_set =
+    "{\"prefix\": \"osd pool set\", "
+    "\"pool\": \"{}\" "
+    "\"var\": \"{}\", "
+    "\"val\": \"{}\"}"sv;
+
+  auto autoscale =
+    fmt::format(pool_set, pool, "pg_autoscale_bias"sv,
+		r.cct()->_conf.get_val<double>("rgw_rados_pool_autoscale_bias"));
+  auto num_min =
+    fmt::format(pool_set, pool, "pg_num_min"sv,
+		r.cct()->_conf.get_val<uint64_t>("rgw_rados_pool_pg_num_min"));
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    r.mon_command({ autoscale },
+		  {}, nullptr, nullptr, yield[ec]);
+    if (ec) {
+      ldout(r.cct(), 10) << __func__ << " warning: failed to set pg_autoscale_bias on "
+			 << pool << dendl;
+      return ec;
+    }
+    r.mon_command({ num_min }, {}, nullptr, nullptr, yield[ec]);
+    if (ec) {
+      ldout(r.cct(), 10) << __func__ << " warning: failed to set pg_num_min on "
+			 << pool << dendl;
+      return ec;
+    }
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  {
+    ca::waiter<bs::error_code> w;
+    r.mon_command({ autoscale }, {}, nullptr, nullptr, w);
+    auto ec = w.wait();
+    if (ec) {
+      ldout(r.cct(), 10) << __func__ << " warning: failed to set pg_autoscale_bias on "
+			 << pool << dendl;
+      return ec;
+    }
+  }
+  {
+    ca::waiter<bs::error_code> w;
+    r.mon_command({ num_min }, {}, nullptr, nullptr, w);
+    auto ec = w.wait();
+    if (ec) {
+      ldout(r.cct(), 10) << __func__ << " warning: failed to set pg_num_min on "
+			 << pool << dendl;
+      return ec;
+    }
+  }
+  return {};
+}
+
+tl::expected<std::int64_t, bs::error_code>
+rgw_rados_acquire_pool_id(R::RADOS& r, std::string_view pool, bool mostly_omap,
+			  optional_yield y, bool create)
+{
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    int64_t id = r.lookup_pool(std::string(pool), yield[ec]);
+    if (ec == bs::errc::no_such_file_or_directory && create) {
+      r.create_pool(pool, nullopt, yield[ec]);
+      if (ec && ec != bs::errc::file_exists) {
+        if (ec == bs::errc::result_out_of_range) {
+          ldout(r.cct(), 0)
+            << __func__
+            << " ERROR: RADOS::RADOS::create_pool returned " << ec
+            << " (this can be due to a pool or placement group misconfiguration, e.g."
+            << " pg_num < pgp_num or mon_max_pg_per_osd exceeded)"
+            << dendl;
+        }
+        return tl::unexpected(ec);
+      }
+      id = r.lookup_pool(std::string(pool), yield[ec]);
+      if (ec)
+        return tl::unexpected(ec);
+      r.enable_application(pool, pg_pool_t::APPLICATION_NAME_RGW, false,
+			   yield[ec]);
+      if (ec && ec != bs::errc::operation_not_supported) {
+        return tl::unexpected(ec);
+      }
+      if (mostly_omap)
+	rgw_rados_set_omap_heavy(r, pool, y);
+    }
+    if (ec)
+      return tl::unexpected(ec);
+    return id;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  bs::error_code ec;
+  int64_t id;
+  {
+    ca::waiter<bs::error_code, int64_t> w;
+    r.lookup_pool(std::string(pool), w);
+    std::tie(ec, id) = w.wait();
+  }
+  if (ec == bs::errc::no_such_file_or_directory && create) {
+    {
+      ca::waiter<bs::error_code> w;
+      r.create_pool(pool, nullopt, w);
+      ec = w.wait();
+    }
+    if (ec && ec != bs::errc::file_exists) {
+      if (ec == bs::errc::result_out_of_range) {
+        ldout(r.cct(), 0)
+          << __func__
+          << " ERROR: RADOS::RADOS::create_pool returned " << ec
+          << " (this can be due to a pool or placement group misconfiguration, e.g."
+          << " pg_num < pgp_num or mon_max_pg_per_osd exceeded)"
+          << dendl;
+      }
+      return tl::unexpected(ec);
+    }
+    {
+      ca::waiter<bs::error_code, int64_t> w;
+      r.lookup_pool(std::string(pool), w);
+      std::tie(ec, id) = w.wait();
+    }
+    if (ec)
+      return tl::unexpected(ec);
+    {
+      ca::waiter<bs::error_code> w;
+      r.enable_application(pool, pg_pool_t::APPLICATION_NAME_RGW,
+				   false, w);
+      ec = w.wait();
+    }
+    if (ec && ec != bs::errc::operation_not_supported) {
+      return tl::unexpected(ec);
+    }
+    if (mostly_omap)
+      rgw_rados_set_omap_heavy(r, pool, y);
+  }
+  if (ec)
+    return tl::unexpected(ec);
+  return id;
+}
+
+
+tl::expected<R::IOContext, bs::error_code>
+rgw_rados_acquire_pool(R::RADOS& r, rgw_pool pool, bool mostly_omap,
+		       optional_yield y, bool create)
+{
+  auto p = rgw_rados_acquire_pool_id(r, pool.name, mostly_omap, y, create);
+  if (p)
+    return R::IOContext(*p, pool.ns);
+  else
+    return tl::unexpected(p.error());
+}
+
+tl::expected<neo_obj_ref, bs::error_code>
+rgw_rados_acquire_obj(R::RADOS& r, const rgw_raw_obj& obj, optional_yield y)
+{
+  neo_obj_ref ref;
+  auto p = rgw_rados_acquire_pool_id(r, obj.pool.name, false, y);
+  if (!p)
+    return tl::unexpected(p.error());
+  ref.r = &r;
+  ref.pool_name = obj.pool.name;
+  ref.oid = std::string(obj.oid);
+  ref.ioc.pool(*p);
+  ref.ioc.ns(obj.pool.ns);
+  ref.ioc.key(obj.loc);
+  return ref;
+}
+
+
+bs::error_code rgw_rados_operate(R::RADOS& r, const R::Object& o,
+				 const R::IOContext& i, R::WriteOp&& op,
+				 optional_yield y, version_t* objver)
+{
+  ldout(r.cct(), 20) << __func__ << " " << o << " " << op << dendl;
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    r.execute(o, i, std::move(op), yield[ec], objver);
+    return ec;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  ca::waiter<bs::error_code> w;
+  r.execute(o, i, std::move(op), w, objver);
+  return w.wait();
+}
+
+bs::error_code rgw_rados_operate(R::RADOS& r, const R::Object& o,
+				 const R::IOContext& i, R::ReadOp&& op,
+				 bufferlist* bl, optional_yield y,
+				 version_t* objver)
+{
+  ldout(r.cct(), 20) << __func__ << " " << o << " " << op << dendl;
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    r.execute(o, i, std::move(op), bl, yield[ec], objver);
+    return ec;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  ca::waiter<bs::error_code> w;
+  r.execute(o, i, std::move(op), bl, w, objver);
+  return w.wait();
+}
+
+tl::expected<uint64_t, bs::error_code>
+rgw_rados_watch(R::RADOS& r, const R::Object& o, const R::IOContext& i,
+		R::RADOS::WatchCB&& f, optional_yield y)
+{
+  ldout(r.cct(), 20) << __func__ << " " << o << dendl;
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    auto handle = r.watch(o, i, nullopt, std::move(f), yield[ec]);
+    if (ec)
+      return tl::unexpected(ec);
+    else
+      return handle;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  ca::waiter<bs::error_code, uint64_t> w;
+  r.watch(o, i, nullopt, std::move(f), w);
+  auto [ec, handle] = w.wait();
+  if (ec)
+    return tl::unexpected(ec);
+  else
+    return handle;
+}
+
+bs::error_code rgw_rados_unwatch(R::RADOS& r, const R::IOContext& i,
+				 uint64_t handle, optional_yield y)
+{
+  ldout(r.cct(), 20) << __func__ << " " << handle << dendl;
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    r.unwatch(handle, i, yield[ec]);
+    return ec;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  ca::waiter<bs::error_code> w;
+  r.unwatch(handle, i, w);
+  return w.wait();
+}
+
+bs::error_code rgw_rados_notify(
+  R::RADOS& r, const R::Object& o, const R::IOContext& i, bufferlist&& bl,
+  std::optional<std::chrono::milliseconds> timeout,
+  bufferlist* pbl, optional_yield y)
+{
+  ldout(r.cct(), 20) << __func__ << " " << o << " " << bl << dendl;
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    auto rbl = r.notify(o, i, std::move(bl), timeout, yield[ec]);
+    if (pbl)
+      *pbl = std::move(rbl);
+    return ec;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  ca::waiter<bs::error_code, bufferlist> w;
+  r.notify(o, i, std::move(bl), timeout, w.ref());
+  auto [ec, rbl] = w.wait();
+  if (pbl)
+    *pbl = std::move(rbl);
+  return ec;
+}
+
+bs::error_code
+rgw_rados_notify_ack(R::RADOS& r, const R::Object& o, R::IOContext& i,
+		     uint64_t notify_id, uint64_t cookie, bufferlist&& bl,
+		     optional_yield y)
+{
+  ldout(r.cct(), 20) << __func__ << " " << o << " " << bl << dendl;
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    bs::error_code ec;
+    r.notify_ack(o, i, notify_id, cookie, std::move(bl), yield[ec]);
+    return ec;
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  ca::waiter<bs::error_code> w;
+  r.notify_ack(o, i, notify_id, cookie, std::move(bl), w);
+  return w.wait();
+}
+
+void rgw_rados_watch_flush(R::RADOS& r, optional_yield y)
+{
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    r.flush_watch(yield);
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+  return;
+#endif
+  ca::waiter<> w;
+  r.flush_watch(w);
+  w.wait();
+}
+
+bs::error_code rgw_rados_list_pool(R::RADOS& r, const R::IOContext& i,
+				   const int max,
+				   const rgw_rados_list_filter& filter,
+				   R::Cursor& iter,
+				   std::vector<std::string>* oids,
+				   bool* is_truncated, optional_yield y)
+{
+  if (iter == R::Cursor::end())
+    return ceph::to_error_code(-ENOENT);
+
+  std::vector<R::Entry> ls;
+  bs::error_code ec;
+
+#ifdef HAVE_BOOST_CONTEXT
+  if (y) {
+    auto& yield = y.get_yield_context();
+    r.enumerate_objects(i, iter, R::Cursor::end(),
+			max, {}, &ls, &iter,
+			yield[ec]);
+  }
+  // work on asio threads should be asynchronous, so warn when they block
+  if (is_asio_thread) {
+    ldout(r.cct(), 20) << "WARNING: blocking librados call" << dendl;
+  }
+#endif
+  if (!y) {
+    ca::waiter<bs::error_code> w;
+    r.enumerate_objects(i, iter, R::Cursor::end(),
+			max, {}, &ls, &iter,
+			w);
+    ec = w.wait();
+  }
+
+  if (ec)
+    return ec;
+
+  for (auto& e : ls) {
+    auto& oid = e.oid;
+    ldout(r.cct(), 20) << "Pool::get_ext: got " << oid << dendl;
+    if (filter && !filter(oid, oid))
+      continue;
+
+    oids->push_back(std::move(oid));
+  }
+
+  if (is_truncated)
+    *is_truncated = (iter != R::Cursor::end());
+  return {};
+}
+
 
 void parse_mime_map_line(const char *start, const char *end)
 {

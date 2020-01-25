@@ -13,6 +13,8 @@
 #include <boost/optional.hpp>
 #include <boost/utility/in_place_factory.hpp>
 
+#include <fmt/format.h>
+
 #include "common/ceph_json.h"
 
 #include "common/async/waiter.h"
