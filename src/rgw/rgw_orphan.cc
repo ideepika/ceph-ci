@@ -468,11 +468,13 @@ int RGWOrphanSearch::pop_and_handle_stat_op(map<int, list<string> >& oids, std::
 {
   RGWRados::Object::Stat& front_op = ops.front();
 
-  int ret = front_op.wait();
-  if (ret < 0) {
-    if (ret != -ENOENT) {
-      lderr(store->ctx()) << "ERROR: stat_async() returned error: " << cpp_strerror(-ret) << dendl;
+  int ret = 0;
+  auto ec = front_op.wait();
+  if (ec) {
+    if (ec != bs::errc::no_such_file_or_directory) {
+      lderr(store->ctx()) << "ERROR: stat_async() returned error: " << ec << dendl;
     }
+    ret = ceph::from_error_code(ec);
     goto done;
   }
   ret = handle_stat_result(oids, front_op.result);
@@ -584,10 +586,10 @@ int RGWOrphanSearch::build_linked_oids_for_bucket(const string& bucket_instance_
       RGWRados::Object::Stat& op = stat_ops.back();
 
 
-      ret = op.stat_async();
-      if (ret < 0) {
-        lderr(store->ctx()) << "ERROR: stat_async() returned error: " << cpp_strerror(-ret) << dendl;
-        return ret;
+      auto ec = op.stat_async();
+      if (ec) {
+        lderr(store->ctx()) << "ERROR: stat_async() returned error: " << ec << dendl;
+        return ceph::from_error_code(ec);
       }
       if (stat_ops.size() >= max_concurrent_ios) {
         ret = pop_and_handle_stat_op(oids, stat_ops);
