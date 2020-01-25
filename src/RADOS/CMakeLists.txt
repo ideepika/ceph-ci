@@ -37,3 +37,4 @@ target_link_libraries(libRADOS PRIVATE
 # install(TARGETS libRADOS DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 add_library(RADOS_cls_version STATIC cls/version.cc)
+add_library(RADOS_cls_rgw STATIC cls/rgw.cc)
