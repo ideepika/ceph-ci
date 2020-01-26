@@ -312,7 +312,7 @@ vector<Policy> get_iam_user_policy_from_attr(CephContext* cct,
   return policies;
 }
 
-static int get_obj_attrs(rgw::sal::RGWRadosStore *store, struct req_state *s, const rgw_obj& obj, map<string, bufferlist>& attrs, rgw_obj *target_obj = nullptr)
+static int get_obj_attrs(rgw::sal::RGWRadosStore *store, struct req_state *s, const rgw_obj& obj, bc::flat_map<string, bufferlist>& attrs, rgw_obj *target_obj = nullptr)
 {
   RGWRados::Object op_target(store->getRados(), s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), obj);
   RGWRados::Object::Read read_op(&op_target);
@@ -325,8 +325,8 @@ static int get_obj_attrs(rgw::sal::RGWRadosStore *store, struct req_state *s, co
 
 static int get_obj_head(rgw::sal::RGWRadosStore *store, struct req_state *s,
                         const rgw_obj& obj,
-                        map<string, bufferlist> *attrs,
-                         bufferlist *pbl)
+                        bc::flat_map<string, bufferlist> *attrs,
+			bufferlist *pbl)
 {
   store->getRados()->set_prefetch_data(s->obj_ctx, obj);
 
@@ -370,7 +370,7 @@ WRITE_CLASS_ENCODER(multipart_upload_info)
 static int get_multipart_info(rgw::sal::RGWRadosStore *store, struct req_state *s,
 			      const rgw_obj& obj,
                               RGWAccessControlPolicy *policy,
-			      map<string, bufferlist> *attrs,
+			      bc::flat_map<string, bufferlist> *attrs,
                               multipart_upload_info *upload_info)
 {
   bufferlist header;
@@ -419,7 +419,7 @@ static int get_multipart_info(rgw::sal::RGWRadosStore *store, struct req_state *
 static int get_multipart_info(rgw::sal::RGWRadosStore *store, struct req_state *s,
 			      const string& meta_oid,
                               RGWAccessControlPolicy *policy,
-			      map<string, bufferlist> *attrs,
+			      bc::flat_map<string, bufferlist> *attrs,
                               multipart_upload_info *upload_info)
 {
   map<string, bufferlist>::iterator iter;
@@ -434,7 +434,7 @@ static int get_multipart_info(rgw::sal::RGWRadosStore *store, struct req_state *
 
 static int modify_obj_attr(rgw::sal::RGWRadosStore *store, struct req_state *s, const rgw_obj& obj, const char* attr_name, bufferlist& attr_val)
 {
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
   RGWRados::Object op_target(store->getRados(), s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), obj);
   RGWRados::Object::Read read_op(&op_target);
 
@@ -805,7 +805,7 @@ static int rgw_iam_add_tags_from_bl(struct req_state* s, bufferlist& bl){
 }
 
 static int rgw_iam_add_existing_objtags(rgw::sal::RGWRadosStore* store, struct req_state* s, rgw_obj& obj, std::uint64_t action){
-  map <string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
   store->getRados()->set_atomic(s->obj_ctx, obj);
   int op_ret = get_obj_attrs(store, s, obj, attrs);
   if (op_ret < 0)
@@ -981,7 +981,8 @@ int RGWGetObj::verify_permission()
 
 // cache the objects tags into the requests
 // use inside try/catch as "decode()" may throw
-void populate_tags_in_request(req_state* s, const std::map<std::string, bufferlist>& attrs) {
+template<typename M>
+void populate_tags_in_request(req_state* s, const M& attrs) {
   const auto attr_iter = attrs.find(RGW_ATTR_TAGS);
   if (attr_iter != attrs.end()) {
     auto bliter = attr_iter->second.cbegin();
@@ -990,7 +991,8 @@ void populate_tags_in_request(req_state* s, const std::map<std::string, bufferli
 }
 
 // cache the objects metadata into the request
-void populate_metadata_in_request(req_state* s, std::map<std::string, bufferlist>& attrs) {
+template<typename M>
+void populate_metadata_in_request(req_state* s, M& attrs) {
   for (auto& attr : attrs) {
     if (boost::algorithm::starts_with(attr.first, RGW_ATTR_META_PREFIX)) {
       std::string_view key(attr.first);
@@ -1053,7 +1055,7 @@ void RGWGetObjTags::pre_exec()
 void RGWGetObjTags::execute()
 {
   rgw_obj obj;
-  map<string,bufferlist> attrs;
+  bc::flat_map<string,bufferlist> attrs;
 
   obj = rgw_obj(s->bucket, s->object);
 
@@ -1589,7 +1591,7 @@ int RGWGetObj::read_user_manifest_part(rgw_bucket& bucket,
 
   rgw_obj part(bucket, ent.key);
 
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
 
   uint64_t obj_size;
   RGWObjectCtx obj_ctx(store);
@@ -2151,8 +2153,9 @@ void RGWGetObj::pre_exec()
   rgw_bucket_object_pre_exec(s);
 }
 
-static bool object_is_expired(map<string, bufferlist>& attrs) {
-  map<string, bufferlist>::iterator iter = attrs.find(RGW_ATTR_DELETE_AT);
+template<typename M>
+static bool object_is_expired(M& attrs) {
+  auto iter = attrs.find(RGW_ATTR_DELETE_AT);
   if (iter != attrs.end()) {
     utime_t delete_at;
     try {
@@ -2170,9 +2173,9 @@ static bool object_is_expired(map<string, bufferlist>& attrs) {
   return false;
 }
 
-static inline void rgw_cond_decode_objtags(
-  struct req_state *s,
-  const std::map<std::string, buffer::list> &attrs)
+template<typename M>
+static inline void rgw_cond_decode_objtags(struct req_state *s,
+					   const M& attrs)
 {
   const auto& tags = attrs.find(RGW_ATTR_TAGS);
   if (tags != attrs.end()) {
@@ -2199,7 +2202,7 @@ void RGWGetObj::execute()
   RGWGetObj_Filter* filter = (RGWGetObj_Filter *)&cb;
   boost::optional<RGWGetObj_Decompress> decompress;
   std::unique_ptr<RGWGetObj_Filter> decrypt;
-  map<string, bufferlist>::iterator attr_iter;
+  bc::flat_map<string, bufferlist>::iterator attr_iter;
 
   perfcounter->inc(l_rgw_get);
 
@@ -2246,7 +2249,7 @@ void RGWGetObj::execute()
       goto done_err;
     }
     torrent.init(s, store);
-    op_ret = torrent.get_torrent_file(read_op, total_len, bl, obj);
+    op_ret = torrent.get_torrent_file(read_op, total_len, bl, obj, s->yield);
     if (op_ret < 0)
     {
       ldpp_dout(this, 0) << "ERROR: failed to get_torrent_file ret= " << op_ret
@@ -3011,9 +3014,10 @@ void RGWCreateBucket::pre_exec()
   rgw_bucket_object_pre_exec(s);
 }
 
-static void prepare_add_del_attrs(const map<string, bufferlist>& orig_attrs,
-                                  map<string, bufferlist>& out_attrs,
-                                  map<string, bufferlist>& out_rmattrs)
+template<typename M>
+static void prepare_add_del_attrs(const M& orig_attrs,
+                                  M& out_attrs,
+                                  M& out_rmattrs)
 {
   for (const auto& kv : orig_attrs) {
     const string& name = kv.first;
@@ -3037,9 +3041,10 @@ static void prepare_add_del_attrs(const map<string, bufferlist>& orig_attrs,
  * will be preserved without any change. Special attributes are those which
  * names start with RGW_ATTR_META_PREFIX. They're complement to custom ones
  * used for X-Account-Meta-*, X-Container-Meta-*, X-Amz-Meta and so on.  */
-static void prepare_add_del_attrs(const map<string, bufferlist>& orig_attrs,
+template<typename M>
+static void prepare_add_del_attrs(const M& orig_attrs,
                                   const set<string>& rmattr_names,
-                                  map<string, bufferlist>& out_attrs)
+                                  M& out_attrs)
 {
   for (const auto& kv : orig_attrs) {
     const string& name = kv.first;
@@ -3067,8 +3072,9 @@ static void prepare_add_del_attrs(const map<string, bufferlist>& orig_attrs,
 }
 
 
+template<typename M>
 static void populate_with_generic_attrs(const req_state * const s,
-                                        map<string, bufferlist>& out_attrs)
+                                        M& out_attrs)
 {
   for (const auto& kv : s->generic_attrs) {
     bufferlist& attrbl = out_attrs[kv.first];
@@ -3079,7 +3085,8 @@ static void populate_with_generic_attrs(const req_state * const s,
 }
 
 
-static int filter_out_quota_info(std::map<std::string, bufferlist>& add_attrs,
+template<typename M>
+static int filter_out_quota_info(M& add_attrs,
                                  const std::set<std::string>& rmattr_names,
                                  RGWQuotaInfo& quota,
                                  bool * quota_extracted = nullptr)
@@ -3711,8 +3718,8 @@ int RGWPutObj::get_data(const off_t fst, const off_t lst, bufferlist& bl)
   boost::optional<RGWGetObj_Decompress> decompress;
   std::unique_ptr<RGWGetObj_Filter> decrypt;
   RGWCompressionInfo cs_info;
-  map<string, bufferlist> attrs;
-  map<string, bufferlist>::iterator attr_iter;
+  bc::flat_map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist>::iterator attr_iter;
   int ret = 0;
 
   uint64_t obj_size;
@@ -4645,7 +4652,7 @@ void RGWPutMetadataObject::execute()
 {
   rgw_obj obj(s->bucket, s->object);
   rgw_obj target_obj;
-  map<string, bufferlist> attrs, orig_attrs, rmattrs;
+  bc::flat_map<string, bufferlist> attrs, orig_attrs, rmattrs;
 
   store->getRados()->set_atomic(s->obj_ctx, obj);
 
@@ -4811,7 +4818,7 @@ void RGWDeleteObj::execute()
   }
 
   rgw_obj obj(s->bucket, s->object);
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
 
   bool check_obj_lock = obj.key.have_instance() && s->bucket_info.obj_lock_enabled();
 
@@ -5999,7 +6006,7 @@ void RGWCompleteMultipart::execute()
   string meta_oid;
   map<uint32_t, RGWUploadPartInfo> obj_parts;
   map<uint32_t, RGWUploadPartInfo>::iterator obj_iter;
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
   off_t ofs = 0;
   MD5 hash;
   char final_etag[CEPH_CRYPTO_MD5_DIGESTSIZE];
@@ -7887,7 +7894,7 @@ void RGWPutObjRetention::execute()
   rgw_obj obj(s->bucket, s->object);
 
   //check old retention
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
   op_ret = get_obj_attrs(store, s, obj, attrs);
   if (op_ret < 0) {
     ldpp_dout(this, 0) << "ERROR: get obj attr error"<< dendl;
@@ -7937,7 +7944,7 @@ void RGWGetObjRetention::execute()
     return;
   }
   rgw_obj obj(s->bucket, s->object);
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
   op_ret = get_obj_attrs(store, s, obj, attrs);
   if (op_ret < 0) {
     ldpp_dout(this, 0) << "ERROR: failed to get obj attrs, obj=" << obj
@@ -8033,7 +8040,7 @@ void RGWGetObjLegalHold::execute()
     return;
   }
   rgw_obj obj(s->bucket, s->object);
-  map<string, bufferlist> attrs;
+  bc::flat_map<string, bufferlist> attrs;
   op_ret = get_obj_attrs(store, s, obj, attrs);
   if (op_ret < 0) {
     ldpp_dout(this, 0) << "ERROR: failed to get obj attrs, obj=" << obj
