@@ -41,6 +41,8 @@
 #include "cls/version/cls_version_client.h"
 #include "osd/osd_types.h"
 
+#include "RADOS/cls/version.h"
+
 #include "rgw_tools.h"
 #include "rgw_coroutine.h"
 #include "rgw_compression.h"
@@ -174,6 +176,17 @@ void RGWObjVersionTracker::prepare_op_for_read(ObjectReadOperation *op)
   cls_version_read(*op, &read_version);
 }
 
+void RGWObjVersionTracker::prepare_op_for_read(RADOS::ReadOp& op)
+{
+  obj_version *check_objv = version_for_check();
+
+  if (check_objv) {
+    RADOS::CLS::version::check(op, *check_objv, VER_COND_EQ);
+  }
+
+  RADOS::CLS::version::read(op, &read_version);
+}
+
 void RGWObjVersionTracker::prepare_op_for_write(ObjectWriteOperation *op)
 {
   obj_version *check_objv = version_for_check();
@@ -187,6 +200,22 @@ void RGWObjVersionTracker::prepare_op_for_write(ObjectWriteOperation *op)
     cls_version_set(*op, *modify_version);
   } else {
     cls_version_inc(*op);
+  }
+}
+
+void RGWObjVersionTracker::prepare_op_for_write(RADOS::WriteOp& op)
+{
+  obj_version *check_objv = version_for_check();
+  obj_version *modify_version = version_for_write();
+
+  if (check_objv) {
+    RADOS::CLS::version::check(op, *check_objv, VER_COND_EQ);
+  }
+
+  if (modify_version) {
+    RADOS::CLS::version::set(op, *modify_version);
+  } else {
+    RADOS::CLS::version::inc(op);
   }
 }
 

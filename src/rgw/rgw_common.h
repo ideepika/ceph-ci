@@ -37,6 +37,7 @@
 #include "cls/user/cls_user_types.h"
 #include "cls/rgw/cls_rgw_types.h"
 #include "include/rados/librados.hpp"
+#include "include/RADOS/RADOS.hpp"
 
 namespace ceph {
   class Formatter;
@@ -1046,6 +1047,9 @@ struct RGWObjVersionTracker {
 
   void prepare_op_for_read(librados::ObjectReadOperation *op);
   void prepare_op_for_write(librados::ObjectWriteOperation *op);
+
+  void prepare_op_for_read(RADOS::ReadOp& op);
+  void prepare_op_for_write(RADOS::WriteOp& op);
 
   void apply_write() {
     read_version = write_version;
