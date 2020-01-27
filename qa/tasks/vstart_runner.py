@@ -503,8 +503,11 @@ def safe_kill(pid):
 
 
 class LocalKernelMount(KernelMount):
-    def __init__(self, ctx, test_dir, client_id):
-        super(LocalKernelMount, self).__init__(ctx, test_dir, client_id, LocalRemote(), None, None, None)
+    def __init__(self, ctx, test_dir, client_id, client_keypath=None):
+        super(LocalKernelMount, self).__init__(ctx=ctx, test_dir=test_dir,
+            client_id=client_id, client_keypath=client_keypath,
+            client_remote=LocalRemote(), ipmi_user=None, ipmi_password=None,
+            ipmi_domain=None)
 
     @property
     def config_path(self):
@@ -675,8 +678,10 @@ class LocalKernelMount(KernelMount):
         rproc.wait()
         self.mounted = False
 
-    def mount(self, mount_path=None, mount_fs_name=None):
-        self.setupfs(name=mount_fs_name)
+    def mount(self, mount_path=None, mount_fs_name=None, createfs=True):
+        # TODO: don't call setupfs() from within mount()
+        if createfs:
+            self.setupfs(name=mount_fs_name)
 
         log.info('Mounting kclient client.{id} at {remote} {mnt}...'.format(
             id=self.client_id, remote=self.client_remote, mnt=self.mountpoint))
@@ -696,26 +701,14 @@ class LocalKernelMount(KernelMount):
         opts = 'name={id},norequire_active_mds,conf={conf}'.format(id=self.client_id,
                                                         conf=self.config_path)
 
-        if mount_fs_name is not None:
-            opts += ",mds_namespace={0}".format(mount_fs_name)
-
-        self.client_remote.run(
-            args=[
-                'sudo',
-                './bin/mount.ceph',
-                ':{mount_path}'.format(mount_path=mount_path),
-                self.mountpoint,
-                '-v',
-                '-o',
-                opts
-            ],
-            timeout=(30*60),
-            omit_sudo=False,
-        )
-
-        self.client_remote.run(
-            args=['sudo', 'chmod', '1777', self.mountpoint], timeout=(5*60))
-
+        self.client_remote.run(args=['mkdir', '--', self.mountpoint],
+                               timeout=(5*60))
+        self.client_remote.run(args=['sudo', './bin/mount.ceph',
+                                     mon_sock + ':' + mount_path,
+                                     self.mountpoint, '-v', '-o', opts],
+                               timeout=(30*60), omit_sudo=False)
+        self.client_remote.run(args=['sudo', 'chmod', '1777',
+                                     self.mountpoint], timeout=(5*60))
         self.mounted = True
 
     def _run_python(self, pyscript, py_version='python'):
@@ -727,8 +720,10 @@ class LocalKernelMount(KernelMount):
                                       wait=False)
 
 class LocalFuseMount(FuseMount):
-    def __init__(self, ctx, test_dir, client_id):
-        super(LocalFuseMount, self).__init__(ctx, None, test_dir, client_id, LocalRemote())
+    def __init__(self, ctx, test_dir, client_id, client_keypath=None):
+        super(LocalFuseMount, self).__init__(ctx=ctx, client_config=None,
+            test_dir=test_dir, client_id=client_id,
+            client_keypath=client_keypath, client_remote=LocalRemote())
 
     @property
     def config_path(self):
@@ -773,6 +768,17 @@ class LocalFuseMount(FuseMount):
             args = 'sudo ' + args
         if isinstance(args, list):
             args.insert(0, 'sudo')
+
+        return self.client_remote.run(args, wait=wait, cwd=self.mountpoint,
+                                      check_status=check_status,
+                                      omit_sudo=False)
+
+    def postestcmd(self, args, wait=True, stdin=None):
+        """
+        Conduct a positive test for the given command.
+        """
+        # FIXME maybe should add a pwd arg to teuthology.orchestra so that
+        # the "cd foo && bar" shenanigans isn't needed to begin with and
 
         return self.client_remote.run(args, wait=wait, cwd=self.mountpoint,
                                       check_status=check_status,
@@ -869,10 +875,13 @@ class LocalFuseMount(FuseMount):
         if self.is_mounted():
             super(LocalFuseMount, self).umount()
 
-    def mount(self, mount_path=None, mount_fs_name=None, mountpoint=None):
+    def mount(self, mount_path=None, mount_fs_name=None, mountpoint=None,
+              createfs=True):
         if mountpoint is not None:
             self.mountpoint = mountpoint
-        self.setupfs(name=mount_fs_name)
+        # TODO: don't call setupfs() from within mount()
+        if createfs:
+            self.setupfs(name=mount_fs_name)
 
         self.client_remote.run(args=['mkdir', '-p', self.mountpoint])
 
@@ -900,23 +909,21 @@ class LocalFuseMount(FuseMount):
         pre_mount_conns = list_connections()
         log.info("Pre-mount connections: {0}".format(pre_mount_conns))
 
-        prefix = [os.path.join(BIN_PREFIX, "ceph-fuse")]
+        cmdargs = [os.path.join(BIN_PREFIX, "ceph-fuse"), self.mountpoint]
         if os.getuid() != 0:
-            prefix += ["--client_die_on_failed_dentry_invalidate=false"]
+            cmdargs += ["--client_die_on_failed_dentry_invalidate=false"]
 
         if mount_path is not None:
-            prefix += ["--client_mountpoint={0}".format(mount_path)]
+            cmdargs += ["--client_mountpoint={0}".format(mount_path)]
 
         if mount_fs_name is not None:
-            prefix += ["--client_mds_namespace={0}".format(mount_fs_name)]
+            cmdargs += ["--client_mds_namespace={0}".format(mount_fs_name)]
 
-        self.fuse_daemon = self.client_remote.run(args=
-                                            prefix + [
-                                                "-f",
-                                                "--name",
-                                                "client.{0}".format(self.client_id),
-                                                self.mountpoint
-                                            ], wait=False)
+        cmdargs += ["-f", "--id", self.client_id]
+        if self.client_keypath:
+            cmdargs.extend(['-k', self.client_keypath])
+
+        self.fuse_daemon = self.client_remote.run(args=cmdargs, wait=False)
 
         log.info("Mounting client.{0} with pid {1}".format(self.client_id, self.fuse_daemon.subproc.pid))
 
@@ -1175,7 +1182,7 @@ class LocalFilesystem(Filesystem, LocalMDSCluster):
         self._ctx = ctx
 
         self.id = None
-        self.name = None
+        self.name = name
         self.ec_profile = None
         self.metadata_pool_name = None
         self.metadata_overlay = False
@@ -1467,9 +1474,11 @@ def exec_test():
             open("./keyring", "a").write(p.stdout.getvalue())
 
         if use_kernel_client:
-            mount = LocalKernelMount(ctx, test_dir, client_id)
+            mount = LocalKernelMount(ctx=ctx, test_dir=test_dir,
+                                     client_id=client_id)
         else:
-            mount = LocalFuseMount(ctx, test_dir, client_id)
+            mount = LocalFuseMount(ctx=ctx, test_dir=test_dir,
+                                   client_id=client_id)
 
         mounts.append(mount)
         if mount.is_mounted():

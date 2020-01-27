@@ -14,16 +14,19 @@ log = logging.getLogger(__name__)
 
 
 class CephFSMount(object):
-    def __init__(self, ctx, test_dir, client_id, client_remote):
+    def __init__(self, ctx, test_dir, client_id, client_remote,
+                 client_keypath=None):
         """
         :param test_dir: Global teuthology test dir
         :param client_id: Client ID, the 'foo' in client.foo
+        :param client_keypath: key for given client_id
         :param client_remote: Remote instance for the host where client will run
         """
 
         self.ctx = ctx
         self.test_dir = test_dir
         self.client_id = client_id
+        self.client_keypath = client_keypath
         self.client_remote = client_remote
         self.mountpoint_dir_name = 'mnt.{id}'.format(id=self.client_id)
         self._mountpoint = None

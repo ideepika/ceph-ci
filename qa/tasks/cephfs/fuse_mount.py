@@ -14,8 +14,11 @@ log = logging.getLogger(__name__)
 
 
 class FuseMount(CephFSMount):
-    def __init__(self, ctx, client_config, test_dir, client_id, client_remote):
-        super(FuseMount, self).__init__(ctx, test_dir, client_id, client_remote)
+    def __init__(self, ctx, client_config, test_dir, client_id,
+                 client_remote, client_keypath=None):
+        super(FuseMount, self).__init__(ctx=ctx, test_dir=test_dir,
+            client_id=client_id, client_remote=client_remote,
+            client_keypath=client_keypath)
 
         self.client_config = client_config if client_config else {}
         self.fuse_daemon = None
@@ -24,10 +27,13 @@ class FuseMount(CephFSMount):
         self.inst = None
         self.addr = None
 
-    def mount(self, mount_path=None, mount_fs_name=None, mountpoint=None):
+    def mount(self, mount_path=None, mount_fs_name=None, mountpoint=None,
+              createfs=True):
         if mountpoint is not None:
             self.mountpoint = mountpoint
-        self.setupfs(name=mount_fs_name)
+        # TODO: don't call setupfs() from within mount().
+        if createfs:
+            self.setupfs(name=mount_fs_name)
 
         try:
             return self._mount(mount_path, mount_fs_name)
@@ -63,18 +69,15 @@ class FuseMount(CephFSMount):
         ]
 
         fuse_cmd = ['ceph-fuse', "-f"]
-
         if mount_path is not None:
             fuse_cmd += ["--client_mountpoint={0}".format(mount_path)]
-
         if mount_fs_name is not None:
             fuse_cmd += ["--client_mds_namespace={0}".format(mount_fs_name)]
-
-        fuse_cmd += [
-            '--name', 'client.{id}'.format(id=self.client_id),
-            # TODO ceph-fuse doesn't understand dash dash '--',
-            self.mountpoint,
-        ]
+        fuse_cmd += ['-id', self.client_id]
+        if self.client_keypath:
+            fuse_cmd += ['-k', self.client_keypath]
+        # TODO ceph-fuse doesn't understand dash dash '--',
+        fuse_cmd.append(self.mountpoint)
 
         if self.client_config.get('valgrind') is not None:
             run_cmd = misc.get_valgrind_args(

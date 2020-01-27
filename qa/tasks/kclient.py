@@ -82,13 +82,13 @@ def task(ctx, config):
             continue
 
         kernel_mount = KernelMount(
-            ctx,
-            test_dir,
-            id_,
-            remote,
-            ctx.teuthology_config.get('ipmi_user', None),
-            ctx.teuthology_config.get('ipmi_password', None),
-            ctx.teuthology_config.get('ipmi_domain', None)
+            ctx=ctx,
+            test_dir=test_dir,
+            client_id=id_,
+            client_remote=remote,
+            ipmi_user=ctx.teuthology_config.get('ipmi_user', None),
+            ipmi_password=ctx.teuthology_config.get('ipmi_password', None),
+            ipmi_domain=ctx.teuthology_config.get('ipmi_domain', None)
         )
 
         mounts[id_] = kernel_mount

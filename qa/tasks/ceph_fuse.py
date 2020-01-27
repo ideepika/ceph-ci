@@ -118,7 +118,9 @@ def task(ctx, config):
             continue
 
         if id_ not in all_mounts:
-            fuse_mount = FuseMount(ctx, client_config, testdir, id_, remote)
+            fuse_mount = FuseMount(ctx=ctx, client_config=client_config,
+                                   test_dir=testdir, client_id=id_,
+                                   client_remote=remote)
             all_mounts[id_] = fuse_mount
         else:
             # Catch bad configs where someone has e.g. tried to use ceph-fuse and kcephfs for the same client

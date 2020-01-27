@@ -19,18 +19,29 @@ UMOUNT_TIMEOUT = 300
 
 class KernelMount(CephFSMount):
     def __init__(self, ctx, test_dir, client_id, client_remote,
-                 ipmi_user, ipmi_password, ipmi_domain):
-        super(KernelMount, self).__init__(ctx, test_dir, client_id, client_remote)
+                 ipmi_user, ipmi_password, ipmi_domain, client_keypath=None):
+        super(KernelMount, self).__init__(ctx=ctx, test_dir=test_dir,
+            client_id=client_id, client_remote=client_remote,
+            client_keypath=client_keypath)
 
         self.mounted = False
         self.ipmi_user = ipmi_user
         self.ipmi_password = ipmi_password
         self.ipmi_domain = ipmi_domain
 
-    def mount(self, mount_path=None, mount_fs_name=None, mountpoint=None):
+    def get_key_from_keyfile(self):
+        with open(self.client_keypath, 'r') as keyfile:
+            for line in keyfile.read().split('\n'):
+                if line.find('key') != -1:
+                    return line[line.find('=') + 1 :].strip()
+
+    def mount(self, mount_path=None, mount_fs_name=None, mountpoint=None,
+              createfs=True):
         if mountpoint is not None:
             self.mountpoint = mountpoint
-        self.setupfs(name=mount_fs_name)
+        # TODO: don't call setupfs() from within mount().
+        if createfs:
+            self.setupfs(name=mount_fs_name)
 
         log.info('Mounting kclient client.{id} at {remote} {mnt}...'.format(
             id=self.client_id, remote=self.client_remote, mnt=self.mountpoint))
@@ -41,8 +52,10 @@ class KernelMount(CephFSMount):
         if mount_path is None:
             mount_path = "/"
 
-        opts = 'name={id},norequire_active_mds,conf={conf}'.format(id=self.client_id,
-                                                        conf=self.config_path)
+        opts = 'name=' + self.client_id
+        if self.client_keypath:
+            opts = 'secret=' + get_key_from_keyfile()
+        opts += ',norequire_active_mds,conf=' + self.config_path
 
         if mount_fs_name is not None:
             opts += ",mds_namespace={0}".format(mount_fs_name)
