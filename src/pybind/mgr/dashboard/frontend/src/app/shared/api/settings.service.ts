@@ -2,9 +2,17 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 import { CdPwdExpirationSettings } from '../models/cd-pwd-expiration-settings';
 import { ApiModule } from './api.module';
+
+class SettingResponse {
+  name: string;
+  default: any;
+  type: string;
+  value: any;
+}
 
 @Injectable({
   providedIn: ApiModule
@@ -13,6 +21,14 @@ export class SettingsService {
   constructor(private http: HttpClient) {}
 
   private settings: { [url: string]: string } = {};
+
+  getValue(name: string) {
+    return this.http.get(`api/settings/${name}`).pipe(
+      map((resp: SettingResponse) => {
+        return resp.value;
+      })
+    );
+  }
 
   ifSettingConfigured(url: string, fn: (value?: string) => void, elseFn?: () => void): void {
     const setting = this.settings[url];
