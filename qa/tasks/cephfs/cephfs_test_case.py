@@ -304,3 +304,59 @@ class CephFSTestCase(CephTestCase):
                 return subtrees
             time.sleep(pause)
         raise RuntimeError("rank {0} failed to reach desired subtree state".format(rank))
+
+    def enable_multifs(self):
+        self.mds_cluster.mon_manager.raw_cluster_cmd('fs', 'flag', 'set',
+            'enable_multiple', 'true', '--yes-i-really-mean-it')
+
+    def create_and_auth_user(self, fsname, username, fspath='/', perms='rw'):
+        """
+        This method creates user "username" and authorizes it by running
+        "ceph fs authorize" to create and authorize a new Ceph user. The
+        output of the command, that is the key, will be copied in a file
+        ceph.client.{username}.key and the key will also be stored in
+        ceph.client.{username}.secret.
+
+        fsname: name of CephFS for which user will be authorized
+        username: user name that will be authorized
+        fspath: path inside CephFS for which authorization will be provided
+        perms: can be 'r', 'w' or 'rw'
+        """
+        entityname = 'client.' + username
+        keyfilename = 'ceph.' + entityname + '.key'
+        if perms not in ('r', 'w', 'rw'):
+            raise RuntimeError('value of argument "perms" is not "r", "w" or '
+                               '"rw" which are the only acceptable values')
+
+        key = self.fs.mon_manager.raw_cluster_cmd('fs', 'authorize', fsname,
+                                                  entityname, fspath, perms)
+        with open(keyfilename, 'w') as keyfile:
+            keyfile.write(key)
+
+        return os.path.join(os.getcwd(), keyfilename)
+
+    def create_secretfile(self, keyfilepath, secretfilepath):
+        """
+        Write secret file; get key from passed key file. Key file name should
+        be the standard way of writing -- "ceph.client.user.key".
+        """
+        keyfilename = os.path.basename(keyfilepath)
+        assert keyfilename.find('ceph.client.') != -1
+        assert keyfilename.find('.key') != -1
+        username = keyfilenane.split('.')[3]
+        secretfilename = username + '.secret'
+        if secretfilepath:
+            secretfilepath = os.path.join(secretfilepath, secretfilename)
+        else:
+            secretfilepath = secretfilename
+
+        with open(keyfilepath, 'r') as keyfile:
+            for line in keyfile.split('\n'):
+                if line.find('key') != -1:
+                    with open(secretfilepath, 'w') as secretfile:
+                        secretfile.write(line[line.find('=') + 1 :].strip())
+                    break
+            else:
+                log.critical('key file had no key. key file -\n' + keyring)
+
+        return secretfilepath
