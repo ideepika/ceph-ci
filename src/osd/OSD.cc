@@ -5680,6 +5680,13 @@ void OSD::tick()
   assert(osd_lock.is_locked());
   dout(10) << "tick" << dendl;
 
+  utime_t now = ceph_clock_now();
+  // throw out any obsolete markdown log
+  utime_t grace = utime_t(cct->_conf->osd_max_markdown_period, 0);
+  while (!osd_markdown_log.empty() &&
+          osd_markdown_log.front() + grace < now)
+    osd_markdown_log.pop_front();
+
   if (is_active() || is_waiting_for_healthy()) {
     maybe_update_heartbeat_peers();
   }
@@ -5689,7 +5696,6 @@ void OSD::tick()
     if (is_waiting_for_healthy()) {
       // failed to boot
       Mutex::Locker l(heartbeat_lock);
-      utime_t now = ceph_clock_now();
       if (now - last_mon_heartbeat > cct->_conf->osd_mon_heartbeat_interval) {
         last_mon_heartbeat = now;
         dout(1) << __func__ << " checking mon for new map" << dendl;
@@ -6450,10 +6456,6 @@ bool OSD::_is_healthy()
 
   if (is_waiting_for_healthy()) {
      utime_t now = ceph_clock_now();
-     utime_t grace = utime_t(cct->_conf->osd_max_markdown_period, 0);
-     while (!osd_markdown_log.empty() &&
-             osd_markdown_log.front() + grace < now)
-       osd_markdown_log.pop_front();
      if (osd_markdown_log.size() <= 1) {
        dout(5) << __func__ << " first time marked as down,"
                << " try reboot unconditionally" << dendl;
@@ -8641,10 +8643,6 @@ void OSD::_committed_osd_maps(epoch_t first, epoch_t last, MOSDMap *m)
 	utime_t now = ceph_clock_now();
 	utime_t grace = utime_t(cct->_conf->osd_max_markdown_period, 0);
 	osd_markdown_log.push_back(now);
-	//clear all out-of-date log
-	while (!osd_markdown_log.empty() &&
-	       osd_markdown_log.front() + grace < now)
-	  osd_markdown_log.pop_front();
 	if ((int)osd_markdown_log.size() > cct->_conf->osd_max_markdown_count) {
 	  dout(0) << __func__ << " marked down "
 		  << osd_markdown_log.size()
