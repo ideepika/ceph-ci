@@ -678,29 +678,30 @@ class LocalKernelMount(KernelMount):
         rproc.wait()
         self.mounted = False
 
+    def get_key_from_keyfile(self):
+        with open(self.client_keypath, 'r') as keyfile:
+            for line in keyfile.read().split('\n'):
+                if line.find('key') != -1:
+                    return line[line.find('=') + 1 :].strip()
+
     def mount(self, mount_path=None, mount_fs_name=None, createfs=True):
+        global mon_sock
+        if mount_path is None:
+            mount_path = "/"
+
+        opts = 'norequire_active_mds,conf=' + self.config_path + ',name=' +\
+               self.client_id
+        if self.client_keypath:
+            opts += ",secret=" + self.get_key_from_keyfile()
+        if mount_fs_name is not None:
+            opts += ",mds_namespace={0}".format(mount_fs_name)
+
         # TODO: don't call setupfs() from within mount()
         if createfs:
             self.setupfs(name=mount_fs_name)
 
-        log.info('Mounting kclient client.{id} at {remote} {mnt}...'.format(
-            id=self.client_id, remote=self.client_remote, mnt=self.mountpoint))
-
-        self.client_remote.run(
-            args=[
-                'mkdir',
-                '--',
-                self.mountpoint,
-            ],
-            timeout=(5*60),
-        )
-
-        if mount_path is None:
-            mount_path = "/"
-
-        opts = 'name={id},norequire_active_mds,conf={conf}'.format(id=self.client_id,
-                                                        conf=self.config_path)
-
+        log.info('Mounting kclient client.{} at {} {}...'.format(
+                 self.client_id, self.client_remote, self.mountpoint))
         self.client_remote.run(args=['mkdir', '--', self.mountpoint],
                                timeout=(5*60))
         self.client_remote.run(args=['sudo', './bin/mount.ceph',
@@ -1457,6 +1458,10 @@ def exec_test():
     ceph_cluster = LocalCephCluster(ctx)
     mds_cluster = LocalMDSCluster(ctx)
     mgr_cluster = LocalMgrCluster(ctx)
+
+    # useful while mounting cephfs via kernel
+    global mon_sock
+    mon_sock = ceph_cluster.mon_manager.get_msgrv1_mon_socks()[0]
 
     # Construct Mount classes
     mounts = []
