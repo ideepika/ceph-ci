@@ -12,8 +12,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
-
-#include "Condition.h"
+#include <seastar/core/reactor.hh>
 
 namespace crimson::thread {
 
@@ -44,7 +43,7 @@ public:
     } catch (...) {
       state.set_exception(std::current_exception());
     }
-    on_done.notify();
+    on_done.write_side().signal(1);
   }
   typename futurator_t::type get_future() {
     return on_done.wait().then([this] {
@@ -58,7 +57,7 @@ public:
 private:
   Func func;
   future_state_t state;
-  crimson::thread::Condition on_done;
+  seastar::readable_eventfd on_done;
 };
 
 struct SubmitQueue {
