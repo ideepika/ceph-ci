@@ -184,7 +184,7 @@ class TestMkdir(TestCephFSShell):
 
 class TestGetAndPut(TestCephFSShell):
     # the 'put' command gets tested as well with the 'get' comamnd
-    def test_put_and_get_without_target_directory(self):
+    def _test_put_and_get_without_target_directory(self):
         """
         Test that put fails without target path
         """
