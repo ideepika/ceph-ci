@@ -1507,14 +1507,16 @@ def execute(args):
     # launch shell else just execute command and exit shell session with the
     # command's return value.
     if not args.exe_and_quit:
-        shell.cmdloop()
+        retval = shell.cmdloop()
+        return retval
 
     args_to_shellcmd = args.commands[0]
     if len(args.commands) > 1:
         for t in args.commands[1:]:
             args_to_shellcmd += ' ' + t
 
-    shell.onecmd(args_to_shellcmd)
+    retval = shell.onecmd(args_to_shellcmd)
+    return retval if retval else shell.exit_code
 
 if __name__ == '__main__':
     config_file = ''
@@ -1526,6 +1528,6 @@ if __name__ == '__main__':
     shell.exit_code = 0
     read_ceph_conf(shell, config_file)
 
-    execute(args)
+    retval = execute(args)
 
-    sys.exit(shell.exit_code)
+    sys.exit(retval if retval else shell.exit_code)
