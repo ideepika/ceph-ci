@@ -397,7 +397,7 @@ class TestCD(TestCephFSShell):
         output = self.get_cephfs_shell_script_output(script)
         self.assertEqual(output, expected_cwd)
 
-class TestDU(TestCephFSShell):
+class _TestDU(TestCephFSShell):
     CLIENTS_REQUIRED = 1
 
     def test_du_works_for_regfiles(self):
