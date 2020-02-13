@@ -1460,29 +1460,27 @@ def read_ceph_conf(shell, config_file):
         perror(e)
         shell.exit_code = e.get_error_code()
 
-if __name__ == '__main__':
-    exe_and_quit = False
-    config_file = ''
-
-    exe = sys.argv[0]
-
+def manage_args():
     main_parser = argparse.ArgumentParser(description='')
     main_parser.add_argument('-c', '--config', action='store',
-                             help='Configuration file_path', type=str)
-    main_parser.add_argument(
-        '-b', '--batch', action='store', help='Batch File path.', type=str)
+                             help='Path to Ceph configuration file.',
+                             type=str)
+    main_parser.add_argument('-b', '--batch', action='store',
+                             help='Path to CephFS shell script/batch file'
+                                  'containing CephFS shell commands',
+                             type=str)
     main_parser.add_argument('-t', '--test', action='store',
                              help='Test against transcript(s) in FILE',
                              nargs='+')
-    main_parser.add_argument(
-        'commands',
-        nargs='*',
-        help='Comma delimited commands. The shell executes the given command '
-             'and quits immediately with the return value of command. In '
-             'case no commands are provided, the shell is launched.',
-        default=[]
-    )
+    main_parser.add_argument('commands', nargs='*', help='Comma delimited '
+                             'commands. The shell executes the given command '
+                             'and quits immediately with the return value of '
+                             'command. In case no commands are provided, the '
+                             'shell is launched.', default=[])
+
     args = main_parser.parse_args()
+    args.exe_and_quit = False    # Execute and quit, don't launch the shell.
+
     if args.config:
         config_file = args.config
     if args.batch:
@@ -1493,25 +1491,41 @@ if __name__ == '__main__':
     if args.test:
         args.commands.extend(['-t,'] + [arg + ',' for arg in args.test])
     if not args.batch and len(args.commands) > 0:
-        exe_and_quit = True
+        args.exe_and_quit = True
 
+    manage_sys_argv(args)
+
+    return args
+
+def manage_sys_argv(args):
+    exe = sys.argv[0]
     sys.argv.clear()
     sys.argv.append(exe)
     sys.argv.extend([i.strip() for i in ' '.join(args.commands).split(',')])
+
+def execute(args):
+    # launch shell else just execute command and exit shell session with the
+    # command's return value.
+    if not args.exe_and_quit:
+        shell.cmdloop()
+
+    args_to_shellcmd = args.commands[0]
+    if len(args.commands) > 1:
+        for t in args.commands[1:]:
+            args_to_shellcmd += ' ' + t
+
+    shell.onecmd(args_to_shellcmd)
+
+if __name__ == '__main__':
+    config_file = ''
+
+    args = manage_args()
 
     setup_cephfs(config_file)
     shell = CephFSShell()
     shell.exit_code = 0
     read_ceph_conf(shell, config_file)
 
-    if exe_and_quit:
-        args_to_shellcmd = args.commands[0]
-        if len(args.commands) > 1:
-            for t in args.commands[1:]:
-                args_to_shellcmd += ' ' + t
+    execute(args)
 
-        shell.onecmd(args_to_shellcmd)
-    else:
-        retval = shell.cmdloop()
-
-    sys.exit(retval)
+    sys.exit(shell.exit_code)
