@@ -128,6 +128,7 @@
 #include "messages/MClientLease.h"
 #include "messages/MClientSnap.h"
 #include "messages/MClientQuota.h"
+#include "messages/MClientMetrics.h"
 
 #include "messages/MMDSSlaveRequest.h"
 
@@ -174,6 +175,8 @@
 #include "messages/MHeartbeat.h"
 
 #include "messages/MMDSTableRequest.h"
+#include "messages/MMDSMetrics.h"
+#include "messages/MMDSPing.h"
 
 //#include "messages/MInodeUpdate.h"
 #include "messages/MCacheExpire.h"
@@ -680,6 +683,9 @@ Message *decode_message(CephContext *cct,
   case CEPH_MSG_CLIENT_QUOTA:
     m = make_message<MClientQuota>();
     break;
+  case CEPH_MSG_CLIENT_METRICS:
+    m = make_message<MClientMetrics>();
+    break;
 
     // mds
   case MSG_MDS_SLAVE_REQUEST:
@@ -825,6 +831,14 @@ Message *decode_message(CephContext *cct,
 
   case MSG_MDS_LOCK:
     m = make_message<MLock>();
+    break;
+
+  case MSG_MDS_METRICS:
+    m = make_message<MMDSMetrics>();
+    break;
+
+  case MSG_MDS_PING:
+    m = make_message<MMDSPing>();
     break;
 
   case MSG_MGR_BEACON:

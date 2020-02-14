@@ -8127,6 +8127,24 @@ std::vector<Option> get_mds_options() {
      .set_flag(Option::FLAG_RUNTIME)
      .set_description("max snapshots per directory")
      .set_long_description("maximum number of snapshots that can be created per directory"),
+
+    Option("mds_ping_grace", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
+     .set_default(15)
+     .set_flag(Option::FLAG_RUNTIME)
+     .set_description("timeout after which an MDS is considered laggy by rank 0 MDS.")
+     .set_long_description("timeout for replying to a ping message sent by rank 0 after which an active MDS considered laggy (delayed metrics) by rank 0."),
+
+    Option("mds_ping_interval", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
+     .set_default(5)
+     .set_flag(Option::FLAG_RUNTIME)
+     .set_description("interval in seconds for sending ping messages to active MDSs.")
+     .set_long_description("interval in seconds for rank 0 to send ping messages to all active MDSs."),
+
+    Option("mds_metrics_update_interval", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
+     .set_default(2)
+     .set_flag(Option::FLAG_RUNTIME)
+     .set_description("interval in seconds for metrics data update.")
+     .set_long_description("interval in seconds after which active MDSs send client metrics data to rank 0.")
   });
 }
 
