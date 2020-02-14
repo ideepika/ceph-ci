@@ -1970,7 +1970,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("osd_max_markdown_period", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(600)
+    .set_default(3600)
     .set_description(""),
 
     Option("osd_max_markdown_count", Option::TYPE_INT, Option::LEVEL_ADVANCED)
