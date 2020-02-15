@@ -32,7 +32,7 @@ class TestScrubControls(CephFSTestCase):
         return self.fs.rank_tell(["scrub", "status"])
     def _check_task_status(self, expected_status):
         task_status = self.fs.get_task_status("scrub status")
-        self.assertTrue(task_status['0'].startswith(expected_status))
+        self.assertTrue(task_status['a'].startswith(expected_status))
 
     def test_scrub_abort(self):
         test_dir = "scrub_control_test_path"
