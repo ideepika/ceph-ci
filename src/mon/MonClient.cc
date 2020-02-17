@@ -1556,6 +1556,8 @@ int MonClient::handle_auth_done(
   } else {
     // verify authorizer reply
     auto p = bl.begin();
+    ceph_assert(auth_meta != NULL);
+    ceph_assert(auth_meta->authorizer != NULL);
     if (!auth_meta->authorizer->verify_reply(p, &auth_meta->connection_secret)) {
       ldout(cct, 0) << __func__ << " failed verifying authorizer reply"
 		    << dendl;
