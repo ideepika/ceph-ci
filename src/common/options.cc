@@ -923,7 +923,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("mon_tick_interval", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(5)
+    .set_default(1)
     .set_description(""),
 
     Option("mon_session_timeout", Option::TYPE_INT, Option::LEVEL_ADVANCED)
@@ -1033,11 +1033,11 @@ std::vector<Option> get_global_options() {
     .set_description("number of PGMaps stats over which we calc the average read/write throughput of the whole cluster"),
 
     Option("mon_election_timeout", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(5)
+    .set_default(2)
     .set_description(""),
 
     Option("mon_lease", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(5)
+    .set_default(2)
     .set_description(""),
 
     Option("mon_lease_renew_interval_factor", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
@@ -1552,15 +1552,15 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("mon_client_hunt_interval", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(3.0)
+    .set_default(0.5)
     .set_description(""),
 
     Option("mon_client_ping_interval", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(10.0)
+    .set_default(1)
     .set_description(""),
 
     Option("mon_client_ping_timeout", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(30.0)
+    .set_default(2)
     .set_description(""),
 
     Option("mon_client_hunt_interval_backoff", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
@@ -1572,7 +1572,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("mon_client_hunt_interval_max_multiple", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(10.0)
+    .set_default(3.0)
     .set_description(""),
 
     Option("mon_client_max_log_entries_per_message", Option::TYPE_INT, Option::LEVEL_ADVANCED)
@@ -2452,12 +2452,12 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("osd_heartbeat_interval", Option::TYPE_INT, Option::LEVEL_DEV)
-    .set_default(6)
+    .set_default(1)
     .set_min_max(1, 60)
     .set_description("Interval (in seconds) between peer pings"),
 
     Option("osd_heartbeat_grace", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(20)
+    .set_default(4)
     .set_description(""),
 
     Option("osd_heartbeat_stale", Option::TYPE_INT, Option::LEVEL_ADVANCED)
